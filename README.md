@@ -1,6 +1,6 @@
 # live-archive
 
-火羽在 B 站直播的逐字稿档案。数据来自本机两个采集端：LiveTranslate（系统音频 → 日语 ASR → 混元 MT 译文）写 `TranslationHistory`，danmaku-it（B 站弹幕 / SC 旁路采集）写 `sc_message`、`danmaku`、`room_event`。两者共用一个 SQLite 文件，本仓库只保存整理后的结果，不入库数据库本身。
+火羽在 B 站直播的逐字稿档案。数据来自两个采集端：LiveTranslate（系统音频 → 日语 ASR → 混元 MT 译文）写 `TranslationHistory`，danmaku-it（B 站弹幕 / SC 旁路采集）写 `sc_message`、`danmaku`、`room_event`。两者共用一个 SQLite 文件，本仓库只保存整理后的结果，不入库数据库本身。
 
 整个链路（三个项目、库表结构、切场规则、已知坑、备份与重建）见 **`AGENT.md`**；本文件只讲站点本身。
 
