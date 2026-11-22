@@ -111,12 +111,13 @@ package.json              Vite 构建依赖（vite 本身）
 vite.config.mjs           dev server / dist 构建；启动时自动调 tools/gen_data.py
 site/
   index.html              {{TITLE}} {{DESC}} {{STREAMER}} 构建时替换，版本号构建后注入
-  assets/app.js           ES module；前端 hash 路由：#/ #/diary #/quotes #/archive #/about
+  assets/app.js           ES module；前端 hash 路由：#/ #/diary #/dynamics #/quotes #/archive #/about
   assets/style.css
   brand/                 头像、favicon、氛围底图、首页夜景（--scene 切换）与预模糊远景
   audio/                 背景音乐 mp3（gen_data.py 复制进 .build/public，preload=none）
   data/profile.json       主播名 / 标题 / 描述
   data/diary.json         直播日记（人工写，最新在最前）
+  data/dynamics.json      B 站动态（export_dynamics.py 从 live-capture 导出，**禁止手改**）
   data/quotes.json        摘录（人工挑，按 date + t 挂场次）
   data/sessions/*.json    每场直播一份，脚本导出，**禁止手改**
   data/subs/*.json        插件用的字幕轨（进 git；插件按固定路径取）
@@ -124,6 +125,7 @@ site/
 tools/
   common.py               配置、读库、切场、话题分类（TOPICS 关键词表）
   export.py               db → site/data/sessions/
+  export_dynamics.py      live-capture 的 dynamics 表 → site/data/dynamics.json（默认 ssh 只读手机库）
   gen_data.py             site/data → .build/：data.js、版本哈希、subs、插件 zip、静态资源
   export_subs.py          db → site/data/subs/（gen_data.py 调用，再复制进 .build/public/subs）
   pack_ext.py             extension/ → .build/public/download/*.zip（gen_data.py 调用）
@@ -143,6 +145,8 @@ cd D:/HibaneHinome/live-archive
 # 导出（幂等：内容没变不落盘）
 python tools/export.py
 python tools/export.py --dry-run          # 先看会改什么，「清掉」必须是 0
+python tools/export_dynamics.py           # B 站动态：默认 ssh 只读手机 capture 库
+python tools/export_dynamics.py --db PATH # 改读本地 capture.db（通常为空，仅调试）
 
 # 构建 / 本地预览
 npm install                               # 首次或依赖变动后
@@ -182,8 +186,22 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 ```json
 { "date": "11-10", "title": "一句话抓这件最突出的事",
   "tagline": "深夜场 · 美食话题 · 防感冒",
-  "body": ["段落1", "段落2"] }
+  "body": ["段落1", "段落2"],
+  "names": ["观众名A", "观众名B"] }
 ```
+
+- `names` **可选**：正文里写到的观众 uname 才填，按正文首次出现顺序；只用于前端把名字包成 `.dname` 做轻微字体区分，不改正文文字，也不写进搜索索引的正文。没有具名观众就省略这个字段。
+
+`dynamics.json`（list，由 `tools/export_dynamics.py` 生成，**禁止手改**）
+
+```json
+{ "id": "动态 ID", "ts": 1795336374, "date": "2026-11-22", "time": "16:32",
+  "month": "2026-11", "type": "DYNAMIC_TYPE_DRAW",
+  "jp": "日语原文", "zh": "译文", "pics": [], "url": "https://www.bilibili.com/opus/..." }
+```
+
+- 只导 `config.toml [capture] mid` 这位 up 主，按 `pub_ts` 倒序；正文开头的零宽空格由导出脚本去掉。
+- capture 本机库通常为空，脚本默认 ssh 到 `v20` 只读查手机库；加 `--db PATH` 才切本地库。重新抓过动态后重跑导出 + 构建。
 
 `quotes.json`（list）
 
@@ -217,7 +235,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 10. **择段优先「讲清楚一件事」**（2026-11-14 用户指定）：优先收她完整解释一个知识点的段落——语源、名物、习俗、制度、文字、某个说法为什么成立，或把一个提问拆成几层答完（`00:28:01 おにぎり / おむすび` 是标杆）。这类比单句俏皮话质量更高。机器译文翻反意思、ASR 有同音错字时，拿 SC 原文和她的口播校准后重译。已收过的结论不要换个时间戳再收一遍，在 `note` 里带过即可。
 11. **对外文案只给必要信息**（2026-11-14 用户指定）：关于页、首页提示、页脚、栏目 lead 一律不写本地实现细节——系统功能、工具名、模型名与参数、本机/音频不上传/是否产生费用、抽检数字、切场次流程；也不写「这里每条只放一段摘要，点进去才是全文」这种操作指引式元说明，读起来像 AI 在向用户解释而不是网页自己说话。保留：站点是什么、覆盖范围与规模、栏目内容、准确性提示、著作权与非官方声明、权利人要求删除。技术流程写在维护文档里，不写给读者。
 12. **逐条审核转录稿**（2026-11-19 用户指定）：导出全文后每条都过一遍，标出 ASR 误识、译文翻反、承接哪条 SC，不只扫摘要。事实错误都来自没读全。
-13. **SC 人名与话题对齐原始数据**（2026-11-19 指定，2026-11-22 补充）：她感谢「某某スパチャ」时，人名按 `sc_message.uname` 写真实 ID（ASR 常把中文 ID 念错），不写音译错名；SC 引出的话题按该条 `message` 原文归位，不按机器译文脑补。当天 SC 若在 live-archive 库里滞后，从手机 live-capture 库（`~/live-capture/data/capture.db`）导出。两处都在 `note` 说明校勘依据。称呼若有明确来源（对方头像、本人要求、她的玩梗）就保留，不按发音「纠正」；内容吻合但名字对不上时按实际 uname 写；纯感谢、不影响日志的人名不猜 uname、也不写进日记。**直播间梗与人物文化背景见 `CULTURE.md`**，校勘拿不准时查它。站点上有面向读者的「梗文化」页（`site/data/culture.json`），**只收有长期特色的：平台黑称（阿姨/叔叔）、每场固定环节（こぶたタイム）这类跨场反复出现的东西；单场次的临场梗不收**（2026-11-22 用户定）。只写面向读者的解释、每条链到真实场次；**维护口径（校勘判据、回写沿革）不写进站点**，新梗要上站时先补 `CULTURE.md` 再摘成读者版。
+13. **SC 人名与话题对齐原始数据**（2026-11-19 指定，2026-11-22 补充）：她感谢「某某スパチャ」时，人名按 `sc_message.uname` 写真实 ID（ASR 常把中文 ID 念错），不写音译错名；SC 引出的话题按该条 `message` 原文归位，不按机器译文脑补。当天 SC 若在 live-archive 库里滞后，从手机 live-capture 库（`~/live-capture/data/capture.db`）导出。两处都在 `note` 说明校勘依据。称呼若有明确来源（对方头像、本人要求、她的玩梗）就保留，不按发音「纠正」；内容吻合但名字对不上时按实际 uname 写；纯感谢、不影响日志的人名不猜 uname、也不写进日记。**直播间梗与人物文化背景见 `CULTURE.md`**，校勘拿不准时查它。CULTURE.md 是维护用内部文档，**不对外发布，站点上也不再有「梗文化」栏目**（2026-11-22 用户要求删除）。
 14. **日记关注动态数据**（2026-11-19 用户指定）：写日记时取开播前那条 B站动态（手机库 `dynamics` 表，`pub_ts` 在开播前），点明动态讲了什么、直播是否接着它展开，交代话题来由。
 15. **直接引用原句且必须带译文**（2026-11-20 指定，2026-11-22 扩充）：`diary.json` 的 `summary` 和 `body` 里提到她的观点或金句时，直接贴出她的原话，不要概括成「五十厘米也算数、九十岁也能堆」这类简介式表述——概括会丢掉她说话的语气。**每处日语原句都要配中文译文**，统一写成「原句」（译文），连单独拎出来的词也要给释义；不允许裸引日语。原句照 `translation_history.db` 的 `SourceText` 校正 ASR 错字后引用，与摘录 `jp/zh` 保持一致。
 16. **不要刻意压缩成金句**（2026-11-20 用户指定）：摘录与摘要可以很长——同一个话题可以整段收进来、连收很多句，不必只挑最有冲击力的一两句；长度本身不是问题。但入选的话要有价值门槛：要么有哲理，要么涨知识，要么丰富主播的人生经历，要么描述得足够精彩。纯玩梗、单句俏皮话不在此列。仍遵守第 10 条校勘口径（原句照 `SourceText`、拿 SC 与口播校准 ASR 错字）。

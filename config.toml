@@ -12,6 +12,13 @@ time_window_keep = ["2026-11-02_1815", "2026-11-11_0904", "2026-11-22_1633"]  # 
 dir = "site"           # 前端源码 + 数据
 dist = "dist"          # 构建产物（不入库，由 CI 生成）
 
+# 主播动态来自 live-capture 抓下来的 dynamics 表。本机库通常是空的，
+# 真实数据在手机上；export_dynamics.py 默认走 ssh 只读查询，不覆盖 data/。
+[capture]
+ssh = "v20"                  # 留空则只读本地 db
+db = "D:/HibaneHinome/live-capture/data/capture.db"
+mid = 2094031249             # 只导出这位 up 主的动态
+
 [publish]
 remote = "origin"
 branch = "main"

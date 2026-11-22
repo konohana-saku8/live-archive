@@ -58,6 +58,7 @@ DEFAULTS = {
     },
     'site': {'dir': 'site', 'dist': 'dist'},
     'publish': {'remote': 'origin', 'branch': 'main'},
+    'capture': {'ssh': '', 'db': '', 'mid': 0},
 }
 
 

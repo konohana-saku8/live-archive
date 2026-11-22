@@ -15,6 +15,34 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  // 日记正文里的观众名只做轻排版：先转义整段，再把 d.names 里的名字
+  // 包成 .dname。长名先占住位置，短名不重复套进去；正文文字保持原样。
+  function diaryText(text, names) {
+    var s = esc(text);
+    if (!names || !names.length) return s;
+    var used = [], spans = [];
+    names.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
+      var needle = esc(name);
+      if (!needle) return;
+      var from = 0, idx;
+      while ((idx = s.indexOf(needle, from)) !== -1) {
+        var end = idx + needle.length;
+        var overlap = used.some(function (r) { return idx < r[1] && end > r[0]; });
+        if (!overlap) {
+          spans.push([idx, end, needle]);
+          used.push([idx, end]);
+        }
+        from = idx + needle.length;
+      }
+    });
+    spans.sort(function (a, b) { return a[0] - b[0]; });
+    var out = '', pos = 0;
+    spans.forEach(function (sp) {
+      out += s.slice(pos, sp[0]) + '<span class="dname">' + sp[2] + '</span>';
+      pos = sp[1];
+    });
+    return out + s.slice(pos);
+  }
   function num(n) { return n.toLocaleString('en-US'); }
   function tname(i) { return D.topics[i] ? D.topics[i][0] : '杂聊'; }
   function tcolor(i) { return D.topics[i] ? D.topics[i][1] : '#4a4f5e'; }
@@ -195,7 +223,7 @@
       });
     }
     else if (r.view === 'diary') { setNav('diary'); renderDiary(r.seg1); }
-    else if (r.view === 'culture') { setNav('culture'); renderCulture(); }
+    else if (r.view === 'dynamics') { setNav('dynamics'); renderDynamics(); }
     else if (r.view === 'about') { setNav('about'); renderAbout(); }
     else { setNav('home'); renderHome(); }
     window.scrollTo(0, 0);
@@ -491,7 +519,7 @@
     var newer = i > 0 ? D.diary[i - 1] : null;
     var older = i < D.diary.length - 1 ? D.diary[i + 1] : null;
 
-    var body = d.body.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('');
+    var body = d.body.map(function (p) { return '<p>' + diaryText(p, d.names) + '</p>'; }).join('');
     var nav =
       '<nav class="dnav">' +
         (older
@@ -1185,38 +1213,50 @@
   }
 
   /* ---------- about ---------- */
-  /* ---------- culture：直播间梗与文化 ---------- */
-  function cultureLink(l) {
-    return '<a class="cl-src" href="#/archive/' + l.s + '?t=' + encodeURIComponent(l.t) + '">' +
-      '<span class="cl-src-t">' + esc(l.t) + '</span><span>' + esc(l.label) + '</span></a>';
-  }
-
-  function renderCulture() {
-    var groups = D.culture || [];
-    var n = groups.reduce(function (sum, g) { return sum + g.items.length; }, 0);
+  /* ---------- dynamics ---------- */
+  function renderDynamics() {
+    var list = D.dynamics || [];
+    var months = [];
+    list.forEach(function (d) {
+      var m = d.month || String(d.date || '').slice(0, 7);
+      var g = months.filter(function (x) { return x.m === m; })[0];
+      if (!g) { g = { m: m, items: [] }; months.push(g); }
+      g.items.push(d);
+    });
+    var span = months.length
+      ? months[months.length - 1].m + ' — ' + months[0].m
+      : '暂无';
     var html =
-      '<section class="culture">' +
-        '<div class="kicker">CULTURE &amp; INSIDE JOKES</div>' +
-        '<h2>直播间<span class="accent">梗与文化</span></h2>' +
-        '<p class="culture-lead">直播间里长期沿用的称呼和固定环节。这些词离开当时的语境就不好懂，' +
-          '这里按它们本来的意思写清楚；每一条都能点进原话出现的那一场。</p>' +
-        '<div class="culture-count">' + groups.length + ' 组 · ' + n + ' 条</div>';
+      '<section class="dynamics">' +
+        '<div class="kicker">BILIBILI DYNAMICS</div>' +
+        '<h2>主播<span class="accent">动态</span></h2>' +
+        '<p class="dyn-lead">从 B 站公开动态里留下来的开播预告和日常碎念，按发布时间排列，中日对照。</p>' +
+        '<div class="dyn-count">' + list.length + ' 条 · ' + span + '</div>';
 
-    groups.forEach(function (g, gi) {
-      html += '<div class="culture-group">' +
-        '<h3><i>' + (gi + 1 < 10 ? '0' : '') + (gi + 1) + '</i>' + esc(g.group) + '</h3>' +
-        '<div class="culture-grid">';
-      g.items.forEach(function (it) {
-        html += '<article class="culture-card">' +
-          '<div class="cc-head"><h4>' + esc(it.term) + '</h4>' +
-            (it.reading ? '<span class="cc-reading">' + esc(it.reading) + '</span>' : '') + '</div>' +
-          '<p class="cc-body">' + esc(it.body) + '</p>' +
-          '<div class="cc-links">' + (it.links || []).map(cultureLink).join('') + '</div>' +
+    if (!list.length) html += '<div class="empty">还没有抓到动态。</div>';
+    months.forEach(function (g) {
+      html += '<div class="dyn-group"><h3><i>' + esc(g.m) + '</i><span>' + g.items.length + ' 条</span></h3>';
+      g.items.forEach(function (d) {
+        html += '<article class="dyn-card">' +
+          '<div class="dyn-side">' +
+            '<b>' + esc(String(d.date || '').replace(/-/g, '.')) + '</b>' +
+            '<span>' + esc(d.time || '') + '</span>' +
+          '</div>' +
+          '<div class="dyn-body">' +
+            '<p class="jp">' + esc(d.jp || '') + '</p>' +
+            (d.zh ? '<p class="zh">' + esc(d.zh) + '</p>' : '') +
+            ((d.pics && d.pics.length)
+              ? '<div class="dyn-pics">' + d.pics.map(function (u) {
+                  return '<img src="' + esc(u) + '" referrerpolicy="no-referrer" loading="lazy" alt="动态图片">';
+                }).join('') + '</div>'
+              : '') +
+            (d.url ? '<div class="dyn-links"><a class="dyn-src" href="' + esc(d.url) +
+              '" target="_blank" rel="noopener">查看原文 ↗</a></div>' : '') +
+          '</div>' +
         '</article>';
       });
-      html += '</div></div>';
+      html += '</div>';
     });
-
     html += '</section>';
     app.innerHTML = html;
     setFoot();
@@ -1235,6 +1275,7 @@
           '<div><b>' + num(D.meta.total) + '</b><span>条记录</span></div>' +
           '<div><b>' + D.meta.quoteCount + '</b><span>段摘录</span></div>' +
           '<div><b>' + diaryN + '</b><span>篇日记</span></div>' +
+          '<div><b>' + (D.meta.dynamicCount || 0) + '</b><span>条动态</span></div>' +
           '<div class="range">' + D.meta.firstDate + ' — ' + D.meta.lastDate + '</div>' +
         '</div>' +
 
@@ -1249,6 +1290,7 @@
         '<div class="box"><h3>这里有什么</h3>' +
           '<p><b>逐字稿</b>　按场次排列的中日对照记录，可全文检索。</p>' +
           '<p><b>日记</b>　每场一篇，记当晚的话题、观众来信与随口讲到的小知识。</p>' +
+          '<p><b>动态</b>　B 站公开动态的中日对照，按发布时间排列。</p>' +
           '<p><b>摘录</b>　从各场挑出的完整段落，保留中日原文与语境说明。</p>' +
         '</div>' +
 

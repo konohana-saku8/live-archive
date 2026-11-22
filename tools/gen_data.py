@@ -98,20 +98,13 @@ def load_sessions(site_dir):
 
 
 def collect(site_dir):
-    """site/data/ 下的场次、摘录、日记、梗文化合成页面用的数据结构。"""
+    """site/data/ 下的场次、摘录、日记、动态合成页面用的数据结构。"""
     with open(os.path.join(site_dir, 'data', 'profile.json'), encoding='utf-8') as f:
         profile = json.load(f)
     sessions = load_sessions(site_dir)
     if not sessions:
         print('!! site/data/sessions 为空，先跑 tools/export.py', file=sys.stderr)
         raise SystemExit(1)
-
-    # 梗与文化：面向读者的说明，按分组排列；不含校勘口径
-    culture_path = os.path.join(site_dir, 'data', 'culture.json')
-    culture = []
-    if os.path.exists(culture_path):
-        with open(culture_path, encoding='utf-8') as f:
-            culture = json.load(f)
 
     with open(os.path.join(site_dir, 'data', 'quotes.json'), encoding='utf-8') as f:
         quotes_raw = json.load(f)
@@ -122,6 +115,13 @@ def collect(site_dir):
     if os.path.exists(diary_path):
         with open(diary_path, encoding='utf-8') as f:
             diary_raw = json.load(f)
+
+    # 主播动态：由 tools/export_dynamics.py 从 live-capture 的 dynamics 表导出
+    dynamics_path = os.path.join(site_dir, 'data', 'dynamics.json')
+    dynamics_out = []
+    if os.path.exists(dynamics_path):
+        with open(dynamics_path, encoding='utf-8') as f:
+            dynamics_out = json.load(f)
 
     sess_out, recs_out = [], []
     for i, s in enumerate(sessions):
@@ -181,9 +181,11 @@ def collect(site_dir):
             # 列表页只显示 summary（一两句），全文放在详情页
             'summary': d.get('summary', ''),
             'body': d['body'],
+            # 正文里出现的观众 uname，仅用于前端 .dname 轻排版
+            'names': d.get('names') or [],
         })
 
-    return profile, sess_out, recs_out, q_out, diary_out, culture, skipped, skipped_diary
+    return profile, sess_out, recs_out, q_out, diary_out, dynamics_out, skipped, skipped_diary
 
 
 def data_js(data):
@@ -235,7 +237,7 @@ def main():
     public_dir = os.path.join(out_dir, 'public')
     os.makedirs(os.path.join(public_dir, 'assets'), exist_ok=True)
 
-    profile, sess_out, recs_out, q_out, diary_out, culture, skipped, skipped_diary = collect(site_dir)
+    profile, sess_out, recs_out, q_out, diary_out, dynamics_out, skipped, skipped_diary = collect(site_dir)
 
     # 工具页要摆出来的两块事实：字幕轨有多大、插件包多大。
     subs_meta = {}
@@ -274,6 +276,7 @@ def main():
             'built': build_stamp(),
             'quoteCount': len(q_out),
             'diaryCount': len(diary_out),
+            'dynamicCount': len(dynamics_out),
             # 工具页的数据：字幕轨概况 + 插件包（版本/体积/下载路径）
             'subs': subs_meta,
             'ext': ext_meta,
@@ -283,7 +286,7 @@ def main():
         'records': recs_out,
         'quotes': q_out,
         'diary': diary_out,
-        'culture': culture,
+        'dynamics': dynamics_out,
     }
 
     js = data_js(data)
@@ -314,8 +317,8 @@ def main():
         json.dump(manifest, f, ensure_ascii=False, indent=2)
         f.write('\n')
 
-    print('data: %d 场 / %d 条 / %d 段摘录 / %d 篇日记 / %d 组梗文化 · data.js %d KB · v=%s'
-          % (len(sess_out), len(recs_out), len(q_out), len(diary_out), len(culture),
+    print('data: %d 场 / %d 条 / %d 段摘录 / %d 篇日记 · data.js %d KB · v=%s'
+          % (len(sess_out), len(recs_out), len(q_out), len(diary_out),
              len(js.encode('utf-8')) // 1024, ver))
     print('subs: %d 场字幕 / %d 块 / %d KB' % (n_subs, n_blocks, sub_bytes // 1024))
     if ext_meta:
