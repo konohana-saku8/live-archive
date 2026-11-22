@@ -1198,7 +1198,7 @@
       '<section class="culture">' +
         '<div class="kicker">CULTURE &amp; INSIDE JOKES</div>' +
         '<h2>直播间<span class="accent">梗与文化</span></h2>' +
-        '<p class="culture-lead">直播里反复出现的称呼、说法和环节。这些词离开当时的语境就不好懂，' +
+        '<p class="culture-lead">直播间里长期沿用的称呼和固定环节。这些词离开当时的语境就不好懂，' +
           '这里按它们本来的意思写清楚；每一条都能点进原话出现的那一场。</p>' +
         '<div class="culture-count">' + groups.length + ' 组 · ' + n + ' 条</div>';
 
