@@ -195,6 +195,7 @@
       });
     }
     else if (r.view === 'diary') { setNav('diary'); renderDiary(r.seg1); }
+    else if (r.view === 'culture') { setNav('culture'); renderCulture(); }
     else if (r.view === 'about') { setNav('about'); renderAbout(); }
     else { setNav('home'); renderHome(); }
     window.scrollTo(0, 0);
@@ -1184,6 +1185,43 @@
   }
 
   /* ---------- about ---------- */
+  /* ---------- culture：直播间梗与文化 ---------- */
+  function cultureLink(l) {
+    return '<a class="cl-src" href="#/archive/' + l.s + '?t=' + encodeURIComponent(l.t) + '">' +
+      '<span class="cl-src-t">' + esc(l.t) + '</span><span>' + esc(l.label) + '</span></a>';
+  }
+
+  function renderCulture() {
+    var groups = D.culture || [];
+    var n = groups.reduce(function (sum, g) { return sum + g.items.length; }, 0);
+    var html =
+      '<section class="culture">' +
+        '<div class="kicker">CULTURE &amp; INSIDE JOKES</div>' +
+        '<h2>直播间<span class="accent">梗与文化</span></h2>' +
+        '<p class="culture-lead">直播里反复出现的称呼、说法和环节。这些词离开当时的语境就不好懂，' +
+          '这里按它们本来的意思写清楚；每一条都能点进原话出现的那一场。</p>' +
+        '<div class="culture-count">' + groups.length + ' 组 · ' + n + ' 条</div>';
+
+    groups.forEach(function (g, gi) {
+      html += '<div class="culture-group">' +
+        '<h3><i>' + (gi + 1 < 10 ? '0' : '') + (gi + 1) + '</i>' + esc(g.group) + '</h3>' +
+        '<div class="culture-grid">';
+      g.items.forEach(function (it) {
+        html += '<article class="culture-card">' +
+          '<div class="cc-head"><h4>' + esc(it.term) + '</h4>' +
+            (it.reading ? '<span class="cc-reading">' + esc(it.reading) + '</span>' : '') + '</div>' +
+          '<p class="cc-body">' + esc(it.body) + '</p>' +
+          '<div class="cc-links">' + (it.links || []).map(cultureLink).join('') + '</div>' +
+        '</article>';
+      });
+      html += '</div></div>';
+    });
+
+    html += '</section>';
+    app.innerHTML = html;
+    setFoot();
+  }
+
   function renderAbout() {
     var diaryN = D.meta.diaryCount || (D.diary ? D.diary.length : 0);
     app.innerHTML =

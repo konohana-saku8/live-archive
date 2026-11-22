@@ -98,13 +98,20 @@ def load_sessions(site_dir):
 
 
 def collect(site_dir):
-    """site/data/ 下的场次、摘录、日记合成页面用的数据结构。"""
+    """site/data/ 下的场次、摘录、日记、梗文化合成页面用的数据结构。"""
     with open(os.path.join(site_dir, 'data', 'profile.json'), encoding='utf-8') as f:
         profile = json.load(f)
     sessions = load_sessions(site_dir)
     if not sessions:
         print('!! site/data/sessions 为空，先跑 tools/export.py', file=sys.stderr)
         raise SystemExit(1)
+
+    # 梗与文化：面向读者的说明，按分组排列；不含校勘口径
+    culture_path = os.path.join(site_dir, 'data', 'culture.json')
+    culture = []
+    if os.path.exists(culture_path):
+        with open(culture_path, encoding='utf-8') as f:
+            culture = json.load(f)
 
     with open(os.path.join(site_dir, 'data', 'quotes.json'), encoding='utf-8') as f:
         quotes_raw = json.load(f)
@@ -176,7 +183,7 @@ def collect(site_dir):
             'body': d['body'],
         })
 
-    return profile, sess_out, recs_out, q_out, diary_out, skipped, skipped_diary
+    return profile, sess_out, recs_out, q_out, diary_out, culture, skipped, skipped_diary
 
 
 def data_js(data):
@@ -228,7 +235,7 @@ def main():
     public_dir = os.path.join(out_dir, 'public')
     os.makedirs(os.path.join(public_dir, 'assets'), exist_ok=True)
 
-    profile, sess_out, recs_out, q_out, diary_out, skipped, skipped_diary = collect(site_dir)
+    profile, sess_out, recs_out, q_out, diary_out, culture, skipped, skipped_diary = collect(site_dir)
 
     # 工具页要摆出来的两块事实：字幕轨有多大、插件包多大。
     subs_meta = {}
@@ -276,6 +283,7 @@ def main():
         'records': recs_out,
         'quotes': q_out,
         'diary': diary_out,
+        'culture': culture,
     }
 
     js = data_js(data)
@@ -306,8 +314,9 @@ def main():
         json.dump(manifest, f, ensure_ascii=False, indent=2)
         f.write('\n')
 
-    print('data: %d 场 / %d 条 / %d 段摘录 / %d 篇日记 · data.js %d KB · v=%s'
-          % (len(sess_out), len(recs_out), len(q_out), len(diary_out), len(js.encode('utf-8')) // 1024, ver))
+    print('data: %d 场 / %d 条 / %d 段摘录 / %d 篇日记 / %d 组梗文化 · data.js %d KB · v=%s'
+          % (len(sess_out), len(recs_out), len(q_out), len(diary_out), len(culture),
+             len(js.encode('utf-8')) // 1024, ver))
     print('subs: %d 场字幕 / %d 块 / %d KB' % (n_subs, n_blocks, sub_bytes // 1024))
     if ext_meta:
         print('ext: v%s / %d 个文件 / %d KB → %s'
