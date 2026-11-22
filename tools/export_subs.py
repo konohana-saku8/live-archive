@@ -40,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import asr_fixes
+import time_fixes
 
 TZ = timezone(timedelta(hours=8))
 
@@ -197,7 +198,11 @@ def load_timing(cfg):
                     'SELECT Timestamp, SourceText, SpeechStart, Duration '
                     'FROM TranslationHistory WHERE SpeechStart IS NOT NULL'):
                 if ss and dur:
-                    out[(int(ts), (src or '').strip())] = (float(ss), float(dur))
+                    # records 里的 Timestamp 已由 common.read_db 校准，timing 必须同步，
+                    # 否则 (ts, jp) 键对不上，整场退回按入库时间估算。
+                    raw_ts = int(ts)
+                    ts = time_fixes.apply(raw_ts)
+                    out[(ts, (src or '').strip())] = (time_fixes.apply(ss), float(dur))
             return out
         finally:
             con.close()

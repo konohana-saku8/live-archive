@@ -9,6 +9,9 @@ import tomllib
 from collections import Counter
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import time_fixes
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEEK = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
@@ -103,7 +106,8 @@ def read_db(db_path):
         cur = con.cursor()
         cur.execute('SELECT Timestamp, SourceText, TranslatedText FROM TranslationHistory '
                     'ORDER BY CAST(Timestamp AS INTEGER)')
-        rows = [(int(ts), (src or '').strip(), clean_translation(tr)) for ts, src, tr in cur.fetchall()]
+        rows = [(time_fixes.apply(int(ts)), (src or '').strip(), clean_translation(tr))
+                for ts, src, tr in cur.fetchall()]
     finally:
         con.close()
     return rows
