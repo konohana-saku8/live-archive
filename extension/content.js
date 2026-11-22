@@ -14,7 +14,7 @@
   if (window.__HBS__) return;
   window.__HBS__ = true;
 
-  var DEFAULT_BASE = 'https://hibane-hinome.github.io/live-archive/';
+  var DEFAULT_BASE = 'https://konohana-saku8.github.io/live-archive/';
 
   var DEFAULTS = {
     on: true,
@@ -98,7 +98,7 @@
   // 同一个文件的三处副本。GitHub Pages 偶尔部署失败、国内偶尔连不上，
   // 多试一处比直接报 404 强。只有用默认源时才挂镜像——用户自己填了地址，
   // 说明他清楚要什么，别背着他去别处取。
-  var GH = 'hibane-hinome/live-archive';
+  var GH = 'konohana-saku8/live-archive';
 
   function sources() {
     var b = base();

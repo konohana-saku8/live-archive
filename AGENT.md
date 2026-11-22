@@ -26,7 +26,7 @@ LiveTranslate 和 danmaku-it 都往这个库里写，live-archive 从里面读�
                 build.py  → dist/
                 publish.py→ git commit →（人工确认）→ push
                              ▼
-             GitHub Pages: https://hibane-hinome.github.io/live-archive/
+             GitHub Pages: https://konohana-saku8.github.io/live-archive/
 ```
 
 ---
@@ -260,7 +260,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 - 搜索是 `index.html` 里**独立于 hash 路由**的浮层（`.sd`）+ `app.js` 末尾独立 IIFE，数据全来自 `window.DATA`，分逐字稿 / 摘录 / 日记 / 场次四组。输入 120ms 防抖、每组限量；一万多条逐字稿每次全量扫一遍但只渲染前 8 条。命中日文就主显示日文、命中译文就主显示译文，两行都高亮。
 - 入口：导航右侧按钮、`Ctrl/Cmd+K`；非存档页按 `/` 也打开（存档页的 `/` 仍聚焦它自己的 `#q`）。↑↓ 选择、回车打开、Esc / 点遮罩关闭。
 - 跳转参数：逐字稿 `#/archive/<sid>?t=<时间>`，摘录 `#/quotes?focus=<qid>`（`quoteCard` 带 DOM id，`renderQuotes` 放开筛选、渲染到目标并加 `.hit` 描边），日记 `#/diary/<key>`，场次 `#/archive/<sid>`；「查看全部逐字稿」走 `#/archive/<sid>?q=<关键词>`，`renderArchive` 预填 `#q` 并跑一次全库检索。
-- 页脚：GitHub 仓库 `hibane-hinome/live-archive` 是必须项，另有主播主页 / 直播间、著作权与准确性提示、更新信息。**不标注整理者 / 作者姓名**（用户 2026-11-15 要求，避免蹭热度嫌疑），**不写备案 / 登记类信息**，也不要把实现细节搬回页脚（写作口径第 11 条）。
+- 页脚：GitHub 仓库 `konohana-saku8/live-archive` 是必须项，另有主播主页 / 直播间、著作权与准确性提示、更新信息。**不标注整理者 / 作者姓名**（用户 2026-11-15 要求，避免蹭热度嫌疑），**不写备案 / 登记类信息**，也不要把实现细节搬回页脚（写作口径第 11 条）。
 - 站内提到主播时统一写全名 **火羽ひのめ**（`profile.json` 的 `streamer` / `title` / `desc` 是唯一来源）；「主页」「主播主页」这类链接文字本身保持原样，不要改成名字。观众 SC 原文与逐字稿里的「火羽」是原始内容，不改。
 
 ### 存档日历（2026-11-15，用户第三轮定稿：紧凑年月日选择器）
@@ -504,7 +504,7 @@ time_window_keep = ["2026-11-02_1815"]
 - 场次 key 与 `site/data/sessions/` 文件名同一套规则（`2026-11-11_0904`），两边能对上；但同一个 key 下**两边的秒数轴不同**（站点版从 `HH:MM:00` 起算，字幕版从第一句起算），别混用。
 - 碎句合并（间隔 <1.6s、≤42 字）与 ASR 重述去重（后句是前句超集则替换）都在导出时做完，插件端只做二分查找。
 - 稿件绑定：`site/data/videos.json`（`{"BV...": "场次key"}`）或简介里写 `HBS:<场次key>`；插件另有按发布时间倒推的兜底。
-- 插件从 `https://hibane-hinome.github.io/live-archive/subs/index.json` 取数据，index 缓存 3 小时；数据随 `publish.cmd --push` 自动上线，没有独立的更新通道。
+- 插件从 `https://konohana-saku8.github.io/live-archive/subs/index.json` 取数据，index 缓存 3 小时；数据随 `publish.cmd --push` 自动上线，没有独立的更新通道。
 - **时间戳锚点**（2026-11-11 晚，两轮修正后的最终结论）：db 里 `Timestamp` 是翻译**回来**的时刻，它锚在说话的**结束**上——说完到入库中位 0.75s（VAD 静音 + 翻译往返），而**开口**到入库中位 4.3s，差值正好是句子本身的时长。所以老数据拿 Timestamp 当字幕起点平均晚 4.3s，且长句比短句晚得更多，**常数对时救不回来**。修正：老场次（无 SpeechStart）按 `结束 − 0.75s − 估时长` 反推开口，估时长用日文字数 ÷ 5.88 字/秒（全库实测中位）；实测对 3690 句验证，偏离真实开口从中位 4.32s 降到 0.68s（ unbiased −0.09s）。统计与验证脚本在 `.state/anchor_stats.py`、`.state/anchor_gain.py`、`.state/dur_est.py`。LiveTranslate 新版直接写 `SpeechStart`/`Duration`/`LagMs` 三列（旧行 NULL），有精确值就逐句用；index/单场里的 `precise` 标记这场是哪种。插件对老场次**不再默认偏移**（修正已在导出端做掉），面板提示「时间为估算（误差约 0.7 秒）」。**别给老数据统一平移**——晚的量随句长变化，常数修正会被 0 点吸收。
 
 - **发布与下载**（2026-11-11 晚新增）：站点导航有「工具」页（`#/tools`，`renderTools()`），给访客直接下载插件。构建时 `pack_ext.build()` 把 `extension/` 打成 `dist/download/hibane-subs-<ver>.zip`（白名单收录，`test/` 不进包），版本号读 manifest；工具页展示的字幕统计与包体积来自 `meta.subs` / `meta.ext`（构建时注入 data.js），**前端不写死数字**。`hibane-subs-latest.zip` 是固定文件名的副本，外部说明可以写死链接。改插件记得同步 bump manifest 版本。

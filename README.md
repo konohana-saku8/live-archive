@@ -4,7 +4,7 @@
 
 整个链路（三个项目、库表结构、切场规则、已知坑、备份与重建）见 **`AGENT.md`**；本文件只讲站点本身。
 
-站点：https://hibane-hinome.github.io/live-archive/
+站点：https://konohana-saku8.github.io/live-archive/
 
 ## 结构
 

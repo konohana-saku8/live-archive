@@ -34,7 +34,7 @@ echo.
 set "RC=%ERRORLEVEL%"
 echo.
 if "%RC%"=="0" (
-  echo [done] site: https://hibane-hinome.github.io/live-archive/
+  echo [done] site: https://konohana-saku8.github.io/live-archive/
 ) else (
   echo [failed] exit code %RC% -- see .state\publish.log
 )

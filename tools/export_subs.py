@@ -379,7 +379,7 @@ def emit(sessions, out_dir, site_dir, stamp='', timing=None):
         'v': 1,
         'updated': stamp or datetime.now(TZ).strftime('%Y.%m.%d %H:%M'),
         # 插件的备用镜像 / 相对取数都以此为根
-        'site': 'https://hibane-hinome.github.io/live-archive/',
+        'site': 'https://konohana-saku8.github.io/live-archive/',
         'count': len(index),
         'blocks': total_blocks,
         # 有几场是真·开口时刻；其余是按下库时间估的，整体晚约 1 秒

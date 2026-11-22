@@ -5,7 +5,7 @@
 GitHub Pages 上，插件每天自动取最新。
 
 不想手动装源码的话，工具页有打包好的 zip：
-<https://hibane-hinome.github.io/live-archive/#/tools>（下载后解压，按下面第 2-4 步装）。
+<https://konohana-saku8.github.io/live-archive/#/tools>（下载后解压，按下面第 2-4 步装）。
 
 ## 安装（Chrome / Edge，开发者模式）
 
@@ -45,7 +45,7 @@ dist/subs/index.json          场次目录 + 稿件映射
 dist/subs/<场次>.json         [[起秒, 止秒, 中文, 日文], ...]
         │  git push → GitHub Actions → Pages
         ▼
-https://hibane-hinome.github.io/live-archive/subs/...
+https://konohana-saku8.github.io/live-archive/subs/...
         │  插件拉取（index 缓存 3 小时，弹窗里可强制刷新）
         ▼
 播放器上的字幕层
