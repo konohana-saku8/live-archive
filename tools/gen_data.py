@@ -185,7 +185,31 @@ def collect(site_dir):
             'names': d.get('names') or [],
         })
 
+    # 动态挂到当天那篇日记：11-05、11-22 这种一天里有两条动态的，
+    # 按时间就近归到那一天的某一场（例如 16:32 那条归 16:33 那场，00:07 归 00:11 那场）。
+    # 没有日记的日期（或没有动态的日记）两边都不勉强凑。
+    def _mins(t):
+        h, m = str(t).split(':')[:2]
+        return int(h) * 60 + int(m)
+
+    by_date = {}
+    for d in diary_out:
+        by_date.setdefault(d['date'], []).append(d)
+    for group in by_date.values():
+        group.sort(key=lambda x: _mins(x['start']))
+    for dyn in dynamics_out:
+        cands = by_date.get(str(dyn.get('date', ''))[5:])   # 2026-11-22 -> 11-22
+        if not cands:
+            continue
+        target = cands[0] if len(cands) == 1 else min(
+            cands, key=lambda d: abs(_mins(d['start']) - _mins(dyn.get('time') or '00:00')))
+        target.setdefault('dyn', []).append(dyn)
+    for d in diary_out:
+        if d.get('dyn'):
+            d['dyn'].sort(key=lambda x: x.get('ts') or 0)
+
     return profile, sess_out, recs_out, q_out, diary_out, dynamics_out, skipped, skipped_diary
+
 
 
 def data_js(data):
@@ -286,7 +310,7 @@ def main():
         'records': recs_out,
         'quotes': q_out,
         'diary': diary_out,
-        'dynamics': dynamics_out,
+        # 动态不再单独成页，已经挂在各自那篇日记的 dyn 字段里（meta.dynamicCount 仍给总数）
     }
 
     js = data_js(data)

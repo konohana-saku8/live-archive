@@ -223,7 +223,8 @@
       });
     }
     else if (r.view === 'diary') { setNav('diary'); renderDiary(r.seg1); }
-    else if (r.view === 'dynamics') { setNav('dynamics'); renderDynamics(); }
+    // 动态已经并进各篇日记，旧的 #/dynamics 链接引导到日记列表，别静悄悄回首页
+    else if (r.view === 'dynamics') { location.replace('#/diary'); return; }
     else if (r.view === 'about') { setNav('about'); renderAbout(); }
     else { setNav('home'); renderHome(); }
     window.scrollTo(0, 0);
@@ -320,6 +321,13 @@
     function cv(n) { return '<span class="cv" data-n="' + n + '">' + (state.counted ? num(n) : '0') + '</span>'; }
 
     app.innerHTML =
+      // 免责声明：文案取自组织主页 .github/profile/README.md 的引用块，置顶一条
+      '<div class="disclaim">' +
+        '<b>免责声明</b>本站由个人维护。主播是个人势、没有团队；这里的内容不代表主播及其粉丝的立场，' +
+        '也与主播本人无关。逐字稿与弹幕可能存在识别错误，引用前请核对原直播，不要断章取义；' +
+        '更不要拿这些内容去给主播带节奏、挑事或引战。' +
+        ' <a href="#/about">关于本站 →</a>' +
+      '</div>' +
       '<section class="hero">' +
         // 主播入口放在首屏最上面：想看现场、想核对记录，第一眼就能出去
         // 直播间块用直播封面，主页块用主播头像，不再额外写一行说明
@@ -374,13 +382,6 @@
             '</figure>'
           : '') +
       '</section>' +
-
-      '<div class="notice">' +
-        '<h4>引用前请留意</h4>' +
-        '<p>逐字稿与译文由自动识别、自动翻译生成；11 月 16 日起的场次已逐条人工校对，更早场次未逐条校对，仍可能有少量误听、断句和专名偏差。' +
-        '<b>日记与摘录经人工整理，可作引用；逐字稿只作检索索引，要确认原话请回原直播。</b>' +
-        ' <a href="#/about">免责声明 →</a></p>' +
-      '</div>' +
 
       '<section class="sec rv">' +
         '<div class="sec-head"><h2><i>01</i>最近一场</h2><a class="more" href="#/archive/' + last.id + '">完整逐字稿 →</a></div>' +
@@ -520,6 +521,33 @@
     var older = i < D.diary.length - 1 ? D.diary[i + 1] : null;
 
     var body = d.body.map(function (p) { return '<p>' + diaryText(p, d.names) + '</p>'; }).join('');
+    // 开播前后在 B 站发的动态：日记正文常直接引用它，所以放在正文前面当背景资料。
+    // 没有动态的那几篇（10 月）就不出这一栏
+    var dyns = d.dyn || [];
+    var dynBlock = dyns.length
+      ? '<section class="dyn-inline">' +
+          '<div class="di-head"><b>动态</b><span>' + dyns.length +
+            ' 条 · 开播前后在 B 站发的</span></div>' +
+          dyns.map(function (x) {
+            return '<article class="dyn-card">' +
+              '<div class="dyn-side"><b>' + esc(x.time || '') + '</b><span>B 站</span></div>' +
+              '<div class="dyn-body">' +
+                '<p class="jp">' + esc(x.jp || '') + '</p>' +
+                (x.zh ? '<p class="zh">' + esc(x.zh) + '</p>' : '') +
+                ((x.pics && x.pics.length)
+                  ? '<div class="dyn-pics">' + x.pics.map(function (u) {
+                      return '<img src="' + esc(u) + '" referrerpolicy="no-referrer" loading="lazy" alt="动态图片">';
+                    }).join('') + '</div>'
+                  : '') +
+                (x.url
+                  ? '<div class="dyn-links"><a class="dyn-src" href="' + esc(x.url) +
+                    '" target="_blank" rel="noopener">查看原帖 ↗</a></div>'
+                  : '') +
+              '</div>' +
+            '</article>';
+          }).join('') +
+        '</section>'
+      : '';
     var nav =
       '<nav class="dnav">' +
         (older
@@ -540,6 +568,7 @@
           '<div class="dinfo dmeta-row">' + esc(d.dateLong) + ' <em>' + esc(d.week) + '</em> · ' + diaryInfo(d) + '</div>' +
         '</div>' +
       '</section>' +
+      dynBlock +
       '<article class="dfull">' +
         '<div class="dbody">' + body + '</div>' +
         '<div class="dlinks">' +
@@ -1213,55 +1242,6 @@
   }
 
   /* ---------- about ---------- */
-  /* ---------- dynamics ---------- */
-  function renderDynamics() {
-    var list = D.dynamics || [];
-    var months = [];
-    list.forEach(function (d) {
-      var m = d.month || String(d.date || '').slice(0, 7);
-      var g = months.filter(function (x) { return x.m === m; })[0];
-      if (!g) { g = { m: m, items: [] }; months.push(g); }
-      g.items.push(d);
-    });
-    var span = months.length
-      ? months[months.length - 1].m + ' — ' + months[0].m
-      : '暂无';
-    var html =
-      '<section class="dynamics">' +
-        '<div class="kicker">BILIBILI DYNAMICS</div>' +
-        '<h2>主播<span class="accent">动态</span></h2>' +
-        '<p class="dyn-lead">从 B 站公开动态里留下来的开播预告和日常碎念，按发布时间排列，中日对照。</p>' +
-        '<div class="dyn-count">' + list.length + ' 条 · ' + span + '</div>';
-
-    if (!list.length) html += '<div class="empty">还没有抓到动态。</div>';
-    months.forEach(function (g) {
-      html += '<div class="dyn-group"><h3><i>' + esc(g.m) + '</i><span>' + g.items.length + ' 条</span></h3>';
-      g.items.forEach(function (d) {
-        html += '<article class="dyn-card">' +
-          '<div class="dyn-side">' +
-            '<b>' + esc(String(d.date || '').replace(/-/g, '.')) + '</b>' +
-            '<span>' + esc(d.time || '') + '</span>' +
-          '</div>' +
-          '<div class="dyn-body">' +
-            '<p class="jp">' + esc(d.jp || '') + '</p>' +
-            (d.zh ? '<p class="zh">' + esc(d.zh) + '</p>' : '') +
-            ((d.pics && d.pics.length)
-              ? '<div class="dyn-pics">' + d.pics.map(function (u) {
-                  return '<img src="' + esc(u) + '" referrerpolicy="no-referrer" loading="lazy" alt="动态图片">';
-                }).join('') + '</div>'
-              : '') +
-            (d.url ? '<div class="dyn-links"><a class="dyn-src" href="' + esc(d.url) +
-              '" target="_blank" rel="noopener">查看原文 ↗</a></div>' : '') +
-          '</div>' +
-        '</article>';
-      });
-      html += '</div>';
-    });
-    html += '</section>';
-    app.innerHTML = html;
-    setFoot();
-  }
-
   function renderAbout() {
     var diaryN = D.meta.diaryCount || (D.diary ? D.diary.length : 0);
     app.innerHTML =
@@ -1290,7 +1270,7 @@
         '<div class="box"><h3>这里有什么</h3>' +
           '<p><b>逐字稿</b>　按场次排列的中日对照记录，可全文检索。</p>' +
           '<p><b>日记</b>　每场一篇，记当晚的话题、观众来信与随口讲到的小知识。</p>' +
-          '<p><b>动态</b>　B 站公开动态的中日对照，按发布时间排列。</p>' +
+          '<p><b>动态</b>　B 站公开动态的中日对照，附在各自那篇日记开头。</p>' +
           '<p><b>摘录</b>　从各场挑出的完整段落，保留中日原文与语境说明。</p>' +
         '</div>' +
 

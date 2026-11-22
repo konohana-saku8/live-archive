@@ -111,7 +111,7 @@ package.json              Vite 构建依赖（vite 本身）
 vite.config.mjs           dev server / dist 构建；启动时自动调 tools/gen_data.py
 site/
   index.html              {{TITLE}} {{DESC}} {{STREAMER}} 构建时替换，版本号构建后注入
-  assets/app.js           ES module；前端 hash 路由：#/ #/diary #/dynamics #/quotes #/archive #/about
+  assets/app.js           ES module；前端 hash 路由：#/ #/diary #/quotes #/archive #/about
   assets/style.css
   brand/                 头像、favicon、氛围底图、首页夜景（--scene 切换）与预模糊远景
   audio/                 背景音乐 mp3（gen_data.py 复制进 .build/public，preload=none）
@@ -201,6 +201,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 ```
 
 - 只导 `config.toml [capture] mid` 这位 up 主，按 `pub_ts` 倒序；正文开头的零宽空格由导出脚本去掉。
+- **不在站上单独成页**：gen_data 按日期把动态挂进对应那篇日记的 `diary[].dyn`（同一天两场按时间就近分配，例如 16:32 归 16:33 那场），日记详情页在正文前渲染这一栏；当天没有日记、或那篇没有动态，就都不出现。`DATA.dynamics` 顶层数组已取消，总数仍在 `meta.dynamicCount`。
 - capture 本机库通常为空，脚本默认 ssh 到 `v20` 只读查手机库；加 `--db PATH` 才切本地库。重新抓过动态后重跑导出 + 构建。
 
 `quotes.json`（list）
