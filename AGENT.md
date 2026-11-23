@@ -311,7 +311,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 
 - **问答档案** `#/qa`：数据就是 `D.quotes` 里带 `sc` 字段的条目（当前 169 条，非 44——`gen_data.split_sc()` 会把旧格式首行拆出 sc）。`renderQA()` 支持按话题 `qaMode='tag'` / 按时间切换；`?q=<quote id>` 深链定位。观众昵称只用摘录里已有的写法，**不要额外暴露账号信息**。
 - **统一时间线** `#/timeline`：按日期把日记、动态、摘录、问答混排在一根竖轴上。注意**顶层 `D` 没有 dynamics**——动态在 `D.diary[].dyn` 里，从那里取。五种筛选写死在 `renderTimeline()` 的 `kinds` 表里；每条都带回到原页的链接。
-- **沉浸阅读**：`#zenView` 是运行时创建并挂到 `body` 上的浮层（不能在 `#app` 内，淡入动画的 transform 会破坏 fixed 定位），`route()` 开头统一 `closeZen()`。键盘左右/Esc、手机左右滑；当前筛选结果存在 `state.qList`，翻页不重新过滤。
+- **沉浸阅读**：`#zenView` 是运行时创建并挂到 `body` 上的浮层（不能在 `#app` 内，淡入动画的 transform 会破坏 fixed 定位），`route()` 开头统一 `closeZen()`。键盘左右/Esc、手机左右滑；当前筛选结果存在 `state.qList`，翻页不重新过滤。`zen-stage` 居中**必须用 `.zen-card{margin:auto}`，不能用 `align-items:center`**——后者在内容超高时把卡片顶部顶到负坐标、那段永远滚不到；浮层背景用不透明 `var(--bg)`，别用 rgba 透出底下页面。`showZen()` 每次把 `stage.scrollTop` 归零，避免新段从中间开始。
 - **金句卡片** `makeQuoteCard()`：纯 canvas 画竖版 PNG（720 宽，高度按行数算），底图 `brand/scene-spring.webp` 同源，`toBlob` + 对象 URL 下载。文案、配色都写死在函数里；改版式只需改这一处，不要引第三方库。
 - **本场高频词** `paintTranscript()`：对本场 `r.jp` 提 2–4 字汉字词与 3–8 字片假名词，过滤 `stopW` 后取频次前 14。点击跳到该词第一次出现的行（用 `jump(hit.t, true)` 的高亮，不另造机制）。它反映「这一场反复说什么」，与预设话题表是两套粒度。
 - **日语学习模式**：`state.learn` + `#learnMode` 开关，`renderList()` 不动 DOM 结构，靠 `.trlist.learn .tr .zh{display:none}` 隐藏译文；点 `.jp` 给该行加 `.show-zh` 展开。SC 块同属 `.tr`，自然生效。

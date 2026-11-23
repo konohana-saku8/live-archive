@@ -716,6 +716,9 @@
     }
     var n = document.getElementById('zenN');
     if (n) n.textContent = (state.zenIdx + 1) + ' / ' + list.length;
+    // 换段回到顶部：否则上一段滚到底，新段会从中间开始，开头那句永远看不到
+    var stage = document.getElementById('zenStage');
+    if (stage) stage.scrollTop = 0;
   }
   function closeZen() {
     var v = document.getElementById('zenView');

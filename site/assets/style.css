@@ -1443,14 +1443,16 @@ body.has-player{padding-bottom:82px}
 .zen-open:hover{background:rgba(255,122,69,.16);border-color:var(--fire)}
 .zen-open span{font-size:10.5px;color:var(--dim)}
 body.zen-open{overflow:hidden}
-.zen{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;background:rgba(9,7,6,.985)}
+.zen{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;background:var(--bg)}
 .zen[hidden]{display:none}
 .zen-top{display:flex;align-items:center;gap:16px;padding:16px 28px;border-bottom:1px solid var(--line)}
 .zen-title{font-size:14px;font-weight:600;color:var(--ink)}
 .zen-n{font:11px var(--mono);color:var(--dim-2)}
 .zen-close{margin-left:auto;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:none;color:var(--dim);font-size:11px;cursor:pointer}
-.zen-stage{flex:1;overflow-y:auto;display:flex;align-items:center;justify-content:center;padding:32px 20px}
-.zen-card{width:min(760px,100%);padding:34px 40px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:0 30px 80px -30px #000}
+/* 居中用 margin:auto 而不是 align-items:center：flex 居中在内容超高时会把顶部顶出滚动区、
+   那段永远滚不到。margin:auto 在内容装得下时居中，超高时自动退化为顶部对齐，完整可滚。 */
+.zen-stage{flex:1;min-height:0;overflow-y:auto;display:flex;justify-content:center;padding:32px 20px}
+.zen-card{width:min(760px,100%);flex:none;margin:auto;padding:34px 40px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:0 30px 80px -30px #000}
 .zen-meta{display:flex;align-items:center;gap:14px;margin-bottom:20px}
 .zen-meta a{font:11px var(--mono);color:var(--dim);text-decoration:none}
 .zen-card .qsc{margin-bottom:20px}
@@ -1463,7 +1465,7 @@ body.zen-open{overflow:hidden}
 .zen-hint{font-size:11px;color:var(--dim-2)}
 @media(max-width:640px){
   .zen-top,.zen-bot{padding:12px 14px}
-  .zen-stage{padding:16px 12px;align-items:flex-start}
+  .zen-stage{padding:16px 12px}
   .zen-card{padding:20px 18px}
   .zen-card .jp{font-size:17px}
   .zen-card .zh{font-size:14px}
