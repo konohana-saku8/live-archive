@@ -237,7 +237,8 @@ def content_version(data, site_dir):
 
 
 def copy_static(site_dir, public_dir):
-    """brand/ 与 audio/ 原样复制：app.js 运行时会拼 brand/xxx 的路径，不能只靠打包器。"""
+    """brand/ 与 audio/ 原样复制：app.js 运行时会拼 brand/xxx 的路径，不能只靠打包器。
+    sw.js / manifest.webmanifest 也没有被 index.html 引用（动态注册），同样要手动带过去。"""
     for name in ('brand', 'audio'):
         src = os.path.join(site_dir, name)
         if not os.path.isdir(src):
@@ -245,6 +246,10 @@ def copy_static(site_dir, public_dir):
         dst = os.path.join(public_dir, name)
         os.makedirs(dst, exist_ok=True)
         shutil.copytree(src, dst, dirs_exist_ok=True)
+    for name in ('sw.js', 'manifest.webmanifest'):
+        src = os.path.join(site_dir, name)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(public_dir, name))
 
 
 def main():

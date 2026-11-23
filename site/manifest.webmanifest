@@ -1,0 +1,14 @@
+{
+  "name": "火羽ひのめ · 直播存档",
+  "short_name": "ひのめ存档",
+  "description": "中日对照的逐字稿、日记、摘录与问答存档。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#100b09",
+  "theme_color": "#ff7a45",
+  "icons": [
+    { "src": "brand/favicon.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}

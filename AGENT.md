@@ -307,6 +307,17 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 - **换页淡入 / 阅读进度**：`playPageIn()` 给 `#app` 加 `.page-in`（`prefers-reduced-motion` 下跳过）；`updateProgress()` 把滚动比例写到 `#readprog` 的 `scaleX`。两者都在 `index.html` / `style.css` 里有对应节点与样式。
 - 自检脚本 `.state/verify_ui.js`（headless Chrome + CDP）覆盖以上交互与 390 窄屏溢出，改动这部分前端后可跑一遍；`.state/` 不入库。
 
+### 问答 / 时间线 / 沉浸阅读 / 学习模式 / 卡片 / 搜索语法 / PWA（2026-11-24）
+
+- **问答档案** `#/qa`：数据就是 `D.quotes` 里带 `sc` 字段的条目（当前 169 条，非 44——`gen_data.split_sc()` 会把旧格式首行拆出 sc）。`renderQA()` 支持按话题 `qaMode='tag'` / 按时间切换；`?q=<quote id>` 深链定位。观众昵称只用摘录里已有的写法，**不要额外暴露账号信息**。
+- **统一时间线** `#/timeline`：按日期把日记、动态、摘录、问答混排在一根竖轴上。注意**顶层 `D` 没有 dynamics**——动态在 `D.diary[].dyn` 里，从那里取。五种筛选写死在 `renderTimeline()` 的 `kinds` 表里；每条都带回到原页的链接。
+- **沉浸阅读**：`#zenView` 是运行时创建并挂到 `body` 上的浮层（不能在 `#app` 内，淡入动画的 transform 会破坏 fixed 定位），`route()` 开头统一 `closeZen()`。键盘左右/Esc、手机左右滑；当前筛选结果存在 `state.qList`，翻页不重新过滤。
+- **金句卡片** `makeQuoteCard()`：纯 canvas 画竖版 PNG（720 宽，高度按行数算），底图 `brand/scene-spring.webp` 同源，`toBlob` + 对象 URL 下载。文案、配色都写死在函数里；改版式只需改这一处，不要引第三方库。
+- **本场高频词** `paintTranscript()`：对本场 `r.jp` 提 2–4 字汉字词与 3–8 字片假名词，过滤 `stopW` 后取频次前 14。点击跳到该词第一次出现的行（用 `jump(hit.t, true)` 的高亮，不另造机制）。它反映「这一场反复说什么」，与预设话题表是两套粒度。
+- **日语学习模式**：`state.learn` + `#learnMode` 开关，`renderList()` 不动 DOM 结构，靠 `.trlist.learn .tr .zh{display:none}` 隐藏译文；点 `.jp` 给该行加 `.show-zh` 展开。SC 块同属 `.tr`，自然生效。
+- **搜索语法**：`parseQuery()` 支持 `tag:` `date:` `sc:` `jp:` `zh:` 前缀，可混用。高亮词取 `ctx.text`（parseQuery 的字段），**不是 `ctx.term`**——`term` 是 `collect()` 的返回字段，写错会让 `markEsc()` 收到 undefined 并抛错。
+- **PWA**：`site/sw.js` + `site/manifest.webmanifest` 没有被 index.html 引用，靠 `gen_data.py::copy_static()` 手拷进 `.build/public/` 才会进 dist。manifest 由 `app.js` 末尾动态注入 `<link>`（避免 Vite 改写路径），SW 在 load 后同源注册。缓存名 `CACHE='live-archive-v1'`，**改 sw.js 内容时把版本号 +1**，否则旧缓存不会被清。SW 只在 HTTPS/localhost 生效；缓存失败不影响站点。
+
 ---
 
 ## 4. danmaku-it

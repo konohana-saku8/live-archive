@@ -4,7 +4,8 @@
   var D = window.DATA;
   var app = document.getElementById('app');
 
-  var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false };
+  var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false,
+    qaMode: 'tag', tlKind: 'all', zen: false, zenIdx: 0, learn: false };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
@@ -235,6 +236,7 @@
 
   function route() {
     stopLive();                 // 清掉上一页的时间轴定时器与滚动监听
+    closeZen();                 // 沉浸浮层是全局的，换页时一并收掉
     setNightScene(false);
     updateProgress();
     var r = parseHash();
@@ -242,6 +244,8 @@
     state.hideEmpty = false;
     state.scOnly = false;
     if (r.view === 'quotes') { setNav('quotes'); renderQuotes(); }
+    else if (r.view === 'qa') { setNav('qa'); renderQA(); }
+    else if (r.view === 'timeline') { setNav('timeline'); renderTimeline(); }
     // 存档只有一个页面：日历选日 → 选场次 → 同页展开逐字稿
     else if (r.view === 'archive') {
       setNav('archive');
@@ -687,6 +691,282 @@
   }
 
   /* ---------- quotes ---------- */
+  /* ---------- 沉浸阅读 ----------
+     把当前筛选结果变成一次一张的卡片：键盘左右翻、手机左右滑，Esc 退出。
+     长段整段显示不截断，卡片内部可以自己滚。 */
+  var zenKey = null;
+  function showZen(i) {
+    var list = state.qList || [];
+    if (!list.length) return;
+    state.zenIdx = (i + list.length) % list.length;
+    var q = list[state.zenIdx];
+    var sc = q.sc
+      ? '<div class="qsc"><b>' + esc(q.sc.name || '观众') + '</b><p>' + esc(q.sc.text) + '</p></div>'
+      : '';
+    var card = document.getElementById('zenCard');
+    if (card) {
+      card.innerHTML =
+        '<div class="zen-meta"><span class="tag"' + tagStyle(q.tag) + '>' + esc(q.tag) + '</span>' +
+          '<a href="#/archive/' + q.s + '?t=' + encodeURIComponent(q.t) + '">' +
+            esc(q.date.replace('-', '.')) + ' ' + esc(q.t) + '</a></div>' +
+        sc +
+        '<p class="jp">' + esc(q.jp) + '</p>' +
+        '<p class="zh">' + esc(q.zh) + '</p>' +
+        (q.note ? '<p class="note">' + esc(q.note) + '</p>' : '');
+    }
+    var n = document.getElementById('zenN');
+    if (n) n.textContent = (state.zenIdx + 1) + ' / ' + list.length;
+  }
+  function closeZen() {
+    var v = document.getElementById('zenView');
+    if (!v || v.hidden) return;
+    v.hidden = true;
+    document.body.classList.remove('zen-open');
+    if (zenKey) { window.removeEventListener('keydown', zenKey); zenKey = null; }
+  }
+  function openZen() {
+    var list = state.qList || [];
+    if (!list.length) return;
+    var v = document.getElementById('zenView');
+    if (!v) {
+      v = document.createElement('div');
+      v.className = 'zen'; v.id = 'zenView'; v.hidden = true;
+      v.innerHTML =
+        '<div class="zen-top"><span class="zen-title">沉浸阅读</span>' +
+          '<span class="zen-n" id="zenN"></span>' +
+          '<button class="zen-close" id="zenClose" type="button">关闭 Esc</button></div>' +
+        '<div class="zen-stage" id="zenStage"><article class="zen-card" id="zenCard"></article></div>' +
+        '<div class="zen-bot"><button class="zen-prev" type="button">← 上一段</button>' +
+          '<span class="zen-hint">← → 翻页 · 手机左右滑</span>' +
+          '<button class="zen-next" type="button">下一段 →</button></div>';
+      document.body.appendChild(v);
+      v.addEventListener('click', function (e) {
+        if (e.target.closest('#zenClose')) { closeZen(); return; }
+        if (e.target.closest('.zen-prev')) { showZen(state.zenIdx - 1); return; }
+        if (e.target.closest('.zen-next')) { showZen(state.zenIdx + 1); return; }
+        if (e.target === v) closeZen();
+      });
+      var stage = document.getElementById('zenStage');
+      var x0 = null;
+      stage.addEventListener('touchstart', function (e) {
+        x0 = e.changedTouches[0].clientX;
+      }, { passive: true });
+      stage.addEventListener('touchend', function (e) {
+        if (x0 == null) return;
+        var dx = e.changedTouches[0].clientX - x0;
+        if (Math.abs(dx) > 60) showZen(state.zenIdx + (dx < 0 ? 1 : -1));
+        x0 = null;
+      }, { passive: true });
+    }
+    v.hidden = false;
+    document.body.classList.add('zen-open');
+    showZen(state.zenIdx || 0);
+    if (!zenKey) {
+      zenKey = function (e) {
+        if (e.key === 'Escape') { closeZen(); return; }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); showZen(state.zenIdx - 1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); showZen(state.zenIdx + 1); }
+      };
+      window.addEventListener('keydown', zenKey);
+    }
+  }
+
+  /* ---------- 问答档案 ----------
+     把散在各场摘录里的 SC 集中成一页：观众那条是提问，她的回应是回答。
+     昵称沿用摘录里已有的写法，不额外暴露账号信息。 */
+  function qaCard(q) {
+    return '<article class="qa-item" id="qa-' + q.id + '">' +
+      '<div class="qa-side">' +
+        '<span class="tag"' + tagStyle(q.tag) + '>' + esc(q.tag) + '</span>' +
+        '<a class="qa-when" href="#/archive/' + q.s + '?t=' + encodeURIComponent(q.t) + '">' +
+          esc(q.date.replace('-', '.')) + '<i>' + esc(q.t) + '</i></a>' +
+      '</div>' +
+      '<div class="qa-main">' +
+        '<div class="qa-q"><span class="qa-who">' + esc(q.sc.name || '观众') + '</span>' +
+          '<p>' + esc(q.sc.text) + '</p></div>' +
+        '<div class="qa-a">' +
+          '<p class="jp">' + esc(q.jp) + '</p>' +
+          '<p class="zh">' + esc(q.zh) + '</p>' +
+        '</div>' +
+        '<a class="qa-src" href="#/quotes?focus=' + encodeURIComponent(q.id) + '">在摘录中查看 →</a>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function paintQA() {
+    var box = document.getElementById('qaList');
+    if (!box) return;
+    var all = D.quotes.filter(function (q) { return q.sc; });
+    var html = '';
+    if (state.qaMode === 'tag') {
+      var groups = {};
+      all.forEach(function (q) { (groups[q.tag] = groups[q.tag] || []).push(q); });
+      var keys = Object.keys(groups).sort(function (a, b) {
+        return (groups[b].length - groups[a].length) || a.localeCompare(b, 'zh');
+      });
+      html = keys.map(function (k) {
+        return '<section class="qa-group"><h3>' + esc(k) + '<span>' + groups[k].length + ' 问</span></h3>' +
+          groups[k].map(qaCard).join('') + '</section>';
+      }).join('');
+    } else {
+      var sorted = all.slice().sort(function (a, b) {
+        return b.date.localeCompare(a.date) || hmsSec(b.t) - hmsSec(a.t);
+      });
+      html = sorted.map(qaCard).join('');
+    }
+    box.innerHTML = html || '<div class="empty">还没有收录带 SC 的摘录。</div>';
+  }
+
+  function renderQA() {
+    var all = D.quotes.filter(function (q) { return q.sc; });
+    var names = {}, tags = {};
+    all.forEach(function (q) {
+      if (q.sc.name) names[q.sc.name] = 1;
+      tags[q.tag] = 1;
+    });
+    var focusId = parseHash().q.q || '';
+    if (focusId) state.qaMode = 'time';
+    app.innerHTML =
+      '<section class="hero hero-sm">' +
+        '<div class="hero-copy">' +
+          '<div class="kicker">QUESTIONS & ANSWERS</div>' +
+          '<h1>问答<span class="thin">，</span><span class="accent">' + all.length + '</span> 组</h1>' +
+          '<p class="lead">观众在 SC 里问了什么，她又是怎么答的。' +
+          '来自 ' + Object.keys(names).length + ' 位观众、' + Object.keys(tags).length +
+          ' 个话题；提问照原文引用，她的回答一字未改。</p>' +
+        '</div>' +
+      '</section>' +
+      '<div class="filters" id="qaModes">' +
+        '<button class="chip' + (state.qaMode === 'tag' ? ' on' : '') + '" data-m="tag">按话题</button>' +
+        '<button class="chip' + (state.qaMode === 'time' ? ' on' : '') + '" data-m="time">按时间</button>' +
+      '</div>' +
+      '<div class="qa-list" id="qaList"></div>';
+    document.getElementById('qaModes').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip');
+      if (!b) return;
+      state.qaMode = b.getAttribute('data-m');
+      document.querySelectorAll('#qaModes .chip').forEach(function (c) {
+        c.classList.toggle('on', c.getAttribute('data-m') === state.qaMode);
+      });
+      paintQA();
+    });
+    paintQA();
+    if (focusId) {
+      requestAnimationFrame(function () {
+        var el = document.getElementById('qa-' + focusId);
+        if (el) { el.classList.add('hit'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+      });
+    }
+    setFoot();
+  }
+
+  /* ---------- 统一时间线 ----------
+     日记、动态、摘录、问答按日期铺在一根竖轴上：想看「这段时间她经历了什么」，
+     不用在几个栏目之间来回切。每条都带回到原页面的链接。 */
+  function renderTimeline() {
+    var kinds = [['all', '全部'], ['diary', '日记'], ['quote', '摘录'], ['qa', '问答'], ['dyn', '动态']];
+    var byDay = {};
+    function push(date, item) {
+      if (!date) return;
+      var key = date.length > 5 ? date.slice(5) : date;
+      (byDay[key] = byDay[key] || []).push(item);
+    }
+    D.diary.forEach(function (d) {
+      push(d.date, { kind: 'diary', t: d.start, title: d.title, text: d.summary || (d.body || [])[0] || '', key: d.key });
+      (d.dyn || []).forEach(function (x) {
+        push(d.date, { kind: 'dyn', t: x.time || '00:00', jp: x.jp || '', zh: x.zh || '', url: x.url });
+      });
+    });
+    D.quotes.forEach(function (q) {
+      push(q.date, {
+        kind: q.sc ? 'qa' : 'quote', t: q.t, jp: q.jp, zh: q.zh, tag: q.tag,
+        id: q.id, sc: q.sc, s: q.s
+      });
+    });
+    var days = Object.keys(byDay).sort().reverse();
+    days.forEach(function (k) {
+      byDay[k].sort(function (a, b) { return hmsSec(b.t) - hmsSec(a.t); });
+    });
+
+    var label = { diary: ['日记', '✎'], quote: ['摘录', '❝'], qa: ['问答', '✦'], dyn: ['动态', '◈'] };
+    function clip(s, n) {
+      s = String(s || '').replace(/\s+/g, ' ').trim();
+      return s.length > n ? s.slice(0, n) + '…' : s;
+    }
+    function tlRow(it) {
+      var m = label[it.kind];
+      var body;
+      if (it.kind === 'diary') {
+        body = '<h4>' + esc(it.title) + '</h4><p class="tl-text">' + esc(clip(it.text, 150)) + '</p>';
+      } else if (it.kind === 'dyn') {
+        body = '<p class="tl-text">' + esc(clip(it.zh || it.jp, 180)) + '</p>';
+      } else {
+        var head = it.sc
+          ? '<div class="tl-q"><b>' + esc(it.sc.name || '观众') + '</b>' + esc(clip(it.sc.text, 90)) + '</div>'
+          : '';
+        body = head + '<p class="tl-jp">' + esc(clip(it.jp, 130)) + '</p>' +
+          '<p class="tl-text">' + esc(clip(it.zh, 170)) + '</p>';
+      }
+      var href = it.kind === 'diary' ? '#/diary/' + encodeURIComponent(it.key)
+        : it.kind === 'dyn' ? it.url
+        : it.kind === 'qa' ? '#/qa?q=' + encodeURIComponent(it.id)
+        : '#/quotes?focus=' + encodeURIComponent(it.id);
+      var external = it.kind === 'dyn' ? ' target="_blank" rel="noopener"' : '';
+      return '<article class="tl-row kind-' + it.kind + '">' +
+        '<div class="tl-hour">' + esc(it.t) + '</div>' +
+        '<div class="tl-node" aria-hidden="true"></div>' +
+        '<div class="tl-card">' +
+          '<div class="tl-kicker"><span>' + m[1] + ' ' + m[0] + '</span>' +
+            (it.tag ? '<em>' + esc(it.tag) + '</em>' : '') +
+            '<a href="' + href + '"' + external + '>查看 →</a></div>' +
+          body +
+        '</div>' +
+      '</article>';
+    }
+    function paint() {
+      var box = document.getElementById('tlDays');
+      if (!box) return;
+      var totalShown = 0;
+      box.innerHTML = days.map(function (k) {
+        var rows = byDay[k].filter(function (it) {
+          return state.tlKind === 'all' || it.kind === state.tlKind;
+        });
+        if (!rows.length) return '';
+        totalShown += rows.length;
+        return '<section class="tl-day"><h3><b>' + esc(k.replace('-', '.')) + '</b>' +
+          '<span>' + rows.length + ' 条</span></h3>' + rows.map(tlRow).join('') + '</section>';
+      }).join('') || '<div class="empty">这个筛选下还没有内容。</div>';
+      var c = document.getElementById('tlCount');
+      if (c) c.textContent = '共 ' + totalShown + ' 条 · ' + days.length + ' 天';
+    }
+    app.innerHTML =
+      '<section class="hero hero-sm">' +
+        '<div class="hero-copy">' +
+          '<div class="kicker">ONE CONTINUOUS THREAD</div>' +
+          '<h1>时间线<span class="thin">，</span><span class="accent">' + days.length + '</span> 天</h1>' +
+          '<p class="lead">日记、动态、摘录和问答按时间排在一起。' +
+          '想找哪一天说过什么，顺着往下翻就行。</p>' +
+        '</div>' +
+      '</section>' +
+      '<div class="filters" id="tlKinds">' + kinds.map(function (x) {
+        return '<button class="chip' + (state.tlKind === x[0] ? ' on' : '') + '" data-k="' + x[0] + '">' +
+          x[1] + '</button>';
+      }).join('') + '</div>' +
+      '<div class="tl-count" id="tlCount"></div>' +
+      '<div class="tl-days" id="tlDays"></div>';
+    document.getElementById('tlKinds').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip');
+      if (!b) return;
+      state.tlKind = b.getAttribute('data-k');
+      document.querySelectorAll('#tlKinds .chip').forEach(function (c) {
+        c.classList.toggle('on', c.getAttribute('data-k') === state.tlKind);
+      });
+      paint();
+    });
+    paint();
+    setFoot();
+  }
+
   function renderQuotes() {
     // 全站搜索跳到某段摘录时，放开筛选并保证目标那一条已经渲染出来
     var focusId = parseHash().q.focus || '';
@@ -725,6 +1005,7 @@
           '<h1>摘录<span class="thin">，</span><span class="accent">' + D.meta.quoteCount + '</span> 段</h1>' +
           '<p class="lead">从 ' + num(D.meta.total) + ' 条记录里挑出的 ' + D.meta.quoteCount + ' 段，' +
           '中日对照，按话题分类。每段都标出引出它的那条 SC，她的话原样保留，措辞不做润色。</p>' +
+          '<button class="zen-open" id="zenOpen" type="button">沉浸阅读 <span>一次一段，左右翻页</span></button>' +
         '</div>' +
       '</section>' +
       '<div class="filters" id="filters">' + chips + '</div>' +
@@ -751,6 +1032,7 @@
       renderQuoteList(true);
     });
     renderQuoteList(true);
+    document.getElementById('zenOpen').addEventListener('click', openZen);
     if (focusQ) {
       state.qShown = Math.max(QBATCH, D.quotes.indexOf(focusQ) + 1);
       renderQuoteList(false);
@@ -787,8 +1069,113 @@
         '</div>' +
         (q.note ? '<p class="note">' + esc(q.note) + '</p>' : '') +
       '</div>' +
-      '<button class="copy" data-id="' + q.id + '">复制</button>' +
+      '<div class="qacts">' +
+        '<button class="copy" data-id="' + q.id + '">复制</button>' +
+        '<button class="mkcard" data-card="' + q.id + '" title="生成图片卡片">卡片</button>' +
+      '</div>' +
     '</article>';
+  }
+
+  /* ---------- 金句卡片 ----------
+     把一条摘录画成竖版 PNG：SC 引用、日文原句、译文、日期与话题。
+     图片同源，画完直接下载；不做上传，也不需要服务端。 */
+  function wrapLines(ctx, text, maxW) {
+    var out = [];
+    String(text || '').split('\n').forEach(function (para) {
+      var line = '';
+      for (var i = 0; i < para.length; i++) {
+        var test = line + para[i];
+        if (line && ctx.measureText(test).width > maxW) { out.push(line); line = para[i]; }
+        else line = test;
+      }
+      out.push(line);
+    });
+    return out.length ? out : [''];
+  }
+
+  function makeQuoteCard(q, btn) {
+    var W = 720, PAD = 64, TW = W - PAD * 2;
+    var m = document.createElement('canvas').getContext('2d');
+    m.font = '600 35px "Yu Gothic", "Noto Sans JP", "Microsoft YaHei", sans-serif';
+    var jpL = wrapLines(m, q.jp, TW);
+    m.font = '400 26px "Noto Sans JP", "Microsoft YaHei", sans-serif';
+    var zhL = wrapLines(m, q.zh, TW);
+    var scL = q.sc ? wrapLines(m, q.sc.text, TW - 28) : [];
+    var H = 250 + jpL.length * 53 + zhL.length * 40 + (q.sc ? scL.length * 36 + 70 : 0) + 120;
+    H = Math.max(760, Math.min(2400, H));
+
+    var c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    var x = c.getContext('2d');
+    function fill() {
+      var g = x.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#20140f'); g.addColorStop(1, '#0e0a09');
+      x.fillStyle = g; x.fillRect(0, 0, W, H);
+      // 左侧一道火色竖线，和站内的强调色保持一致
+      x.fillStyle = '#ff7a45'; x.fillRect(0, 0, 7, H);
+    }
+    function content() {
+      x.textBaseline = 'top';
+      x.fillStyle = '#ff9a6a';
+      x.font = '600 19px "Microsoft YaHei", sans-serif';
+      x.fillText('火羽ひのめ · 直播存档', PAD, 62);
+      x.fillStyle = '#8d837d';
+      x.font = '500 18px "Microsoft YaHei", sans-serif';
+      x.fillText(q.date.replace('-', '.') + '  ' + q.t + '   ·   ' + q.tag, PAD, 94);
+
+      var y = 148;
+      if (q.sc) {
+        x.fillStyle = 'rgba(255,255,255,.045)';
+        x.fillRect(PAD - 18, y - 16, TW + 36, scL.length * 36 + 66);
+        x.fillStyle = '#79a9d6';
+        x.font = '600 19px "Microsoft YaHei", sans-serif';
+        x.fillText(q.sc.name || '观众', PAD, y);
+        y += 32;
+        x.fillStyle = '#c9c3be';
+        x.font = '400 22px "Microsoft YaHei", sans-serif';
+        scL.forEach(function (line) { x.fillText(line, PAD, y); y += 36; });
+        y += 46;
+      }
+      x.fillStyle = '#f5efe9';
+      x.font = '600 35px "Yu Gothic", "Noto Sans JP", "Microsoft YaHei", sans-serif';
+      jpL.forEach(function (line) { x.fillText(line, PAD, y); y += 53; });
+      y += 30;
+      x.fillStyle = '#aaa09a';
+      x.font = '400 26px "Noto Sans JP", "Microsoft YaHei", sans-serif';
+      zhL.forEach(function (line) { x.fillText(line, PAD, y); y += 40; });
+
+      x.fillStyle = '#5f5752';
+      x.font = '400 17px "Microsoft YaHei", sans-serif';
+      x.fillText('非官方粉丝整理 · 著作权归主播及原权利人所有', PAD, H - 58);
+    }
+    function save() {
+      try {
+        c.toBlob(function (blob) {
+          if (!blob) { btn.textContent = '失败'; return; }
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = '火羽ひのめ-' + q.date + '-' + q.t.replace(/:/g, '') + '.png';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+          btn.textContent = '已保存';
+          setTimeout(function () { btn.textContent = '卡片'; }, 1600);
+        }, 'image/png');
+      } catch (err) {
+        btn.textContent = '失败';
+        setTimeout(function () { btn.textContent = '卡片'; }, 1600);
+      }
+    }
+    fill();
+    var img = new Image();
+    img.onload = function () {
+      x.globalAlpha = 0.18;
+      x.drawImage(img, 0, 0, W, H);
+      x.globalAlpha = 1;
+      content(); save();
+    };
+    img.onerror = function () { content(); save(); };
+    img.src = 'brand/scene-spring.webp';
   }
 
   // reset=true 时回到第一批：切换筛选后从顶部重新铺，避免停在一个空的批次上
@@ -798,6 +1185,7 @@
       return (state.tag === '全部' || q.tag === state.tag) &&
              (state.qs === 'all' || String(q.s) === state.qs);
     });
+    state.qList = list;
     var shown = list.slice(0, state.qShown);
     var box = document.getElementById('qlist');
     var more = document.getElementById('qmore');
@@ -819,6 +1207,12 @@
   }
 
   app.addEventListener('click', function (e) {
+    var cardBtn = e.target.closest('.mkcard');
+    if (cardBtn) {
+      var cq = D.quotes.filter(function (x) { return x.id === cardBtn.getAttribute('data-card'); })[0];
+      if (cq && cardBtn.textContent === '卡片') makeQuoteCard(cq, cardBtn);
+      return;
+    }
     var btn = e.target.closest('.copy');
     if (!btn) return;
     var q = D.quotes.filter(function (x) { return x.id === btn.getAttribute('data-id'); })[0];
@@ -1107,7 +1501,34 @@
     state.hideEmpty = false;
     state.scOnly = false;
     var cur = sess(sid);
+    state.learn = false;
     var startH = parseInt(cur.start.split(':')[0], 10);
+
+    // 本场高频词：只取日文里的汉字词与片假名，按出现次数排。
+    // 与预设话题不同，这里反映的是「这一场她反复在说什么」。
+    var here = D.records.filter(function (r) { return r.s === sid; });
+    var stopW = {};
+    ('こと もの です ます した して する れる ない この その あと から まで でも だけ ' +
+     '自分 今日 時間 人 今 思う いう できる くれる ある いる よう とき 本当 ちょっと ' +
+     'そう あの これ それ どこ なん まだ また ここ けど いい ください').split(/\s+/).forEach(function (w) { if (w) stopW[w] = 1; });
+    var wordN = {};
+    here.forEach(function (r) {
+      var s = r.jp || '';
+      (s.match(/[\u4e00-\u9fff]{2,4}/g) || []).forEach(function (w) {
+        if (!stopW[w]) wordN[w] = (wordN[w] || 0) + 1;
+      });
+      (s.match(/[ァ-ヶー]{3,8}/g) || []).forEach(function (w) {
+        if (!stopW[w]) wordN[w] = (wordN[w] || 0) + 1;
+      });
+    });
+    var hotWords = Object.keys(wordN).filter(function (w) { return wordN[w] >= 3; })
+      .sort(function (a, b) { return wordN[b] - wordN[a]; }).slice(0, 14);
+    var kwNav = hotWords.length
+      ? '<div class="kw-nav"><span class="kw-label">本场高频</span>' + hotWords.map(function (w) {
+          return '<button class="kw" type="button" data-w="' + esc(w) + '">' + esc(w) +
+            '<i>' + wordN[w] + '</i></button>';
+        }).join('') + '</div>'
+      : '';
     // 凌晨档（0 点到日出前）切到夜景，营造「深夜直播」的场景感
     setNightScene(startH < 6 || startH >= 20);
 
@@ -1259,10 +1680,12 @@
         '<div class="ribbon-wrap"><div class="ribbon" id="ribbon">' + ribbon + '</div>' +
           '<div class="ribbon-legend">' + legend + '</div></div>' +
         (toc ? '<div class="toc">' + toc + '</div>' : '') +
+        kwNav +
         '<div class="tools">' +
           '<label class="search"><span class="ico">⌕</span><input id="q" placeholder="搜索这一场，或直接全库检索…" autocomplete="off"></label>' +
           '<label class="toggle"><input type="checkbox" id="scOnly">只看 SC</label>' +
           '<label class="toggle"><input type="checkbox" id="hideEmpty">只看有译文</label>' +
+          '<label class="toggle"><input type="checkbox" id="learnMode">隐藏译文</label>' +
         '</div>' +
         '<div class="count" id="count"></div>' +
         '<div class="trlist" id="trlist"></div>' +
@@ -1283,6 +1706,31 @@
     document.getElementById('scOnly').addEventListener('change', function (e) {
       state.scOnly = e.target.checked;
       renderList(sid);
+    });
+    document.getElementById('learnMode').addEventListener('change', function (e) {
+      state.learn = e.target.checked;
+      document.getElementById('trlist').classList.toggle('learn', state.learn);
+    });
+    // 学习模式：译文默认藏起来，点日文那一条才展开，再点收回
+    document.getElementById('trlist').addEventListener('click', function (e) {
+      if (!state.learn) return;
+      var jp = e.target.closest('.jp');
+      if (!jp) return;
+      var tr = jp.closest('.tr');
+      if (tr) tr.classList.toggle('show-zh');
+    });
+    // 本场高频词：跳到它第一次出现的那一行
+    var kwBox = box.querySelector('.kw-nav');
+    if (kwBox) kwBox.addEventListener('click', function (e) {
+      var b = e.target.closest('.kw');
+      if (!b) return;
+      var w = b.getAttribute('data-w'), hit = null;
+      for (var i = 0; i < here.length; i++) {
+        if ((here[i].jp || '').indexOf(w) >= 0) { hit = here[i]; break; }
+      }
+      if (!hit) return;
+      kwBox.querySelectorAll('.kw').forEach(function (x) { x.classList.toggle('on', x === b); });
+      jump(hit.t, true);
     });
     box.querySelector('[data-backtop]').addEventListener('click', function () {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1916,76 +2364,103 @@
   function sessOf(i) { return D.sessions[i] || { date: '', dateLong: '', week: '' }; }
   function dText(d) { return [d.title, d.tagline, d.summary, (d.body || []).join(' ')].join(' '); }
 
+  // 搜索语法：tag:话题  date:11-24  sc:关键词  jp:日文  zh:译文，
+  // 可以混用，剩下的词仍按全文检索。没有前缀时行为和以前完全一样。
+  function parseQuery(raw) {
+    var f = { tag: '', date: '', sc: '', jp: '', zh: '' }, words = [];
+    String(raw || '').trim().split(/\s+/).forEach(function (tok) {
+      var m = /^(tag|date|sc|jp|zh):(.+)$/i.exec(tok);
+      if (m) f[m[1].toLowerCase()] = m[2];
+      else if (tok) words.push(tok);
+    });
+    return { f: f, text: words.join(' ') };
+  }
+
   if (scope) {
     scope.textContent = D.meta.total.toLocaleString('en-US') + ' 条逐字稿 · ' +
       D.meta.quoteCount + ' 段摘录 · ' + D.meta.diaryCount + ' 篇日记';
   }
 
-  function collect(q) {
-    var ql = q.toLowerCase(), groups = [], recTotal = 0;
+  function collect(q, ctx) {
+    ctx = ctx || parseQuery(q);
+    var F = ctx.f, ql = ctx.text.toLowerCase(), term = ctx.text;
+    var groups = [], recTotal = 0;
+    var quoteOnly = !!(F.tag || F.sc);   // tag / sc 是摘录专属字段
 
-    var recRows = [];
-    for (var i = D.records.length - 1; i >= 0; i--) {   // 新场次优先
-      var r = D.records[i];
-      if (has(r.jp, ql) || has(r.zh, ql)) {
+    if (!quoteOnly) {
+      var recRows = [];
+      for (var i = D.records.length - 1; i >= 0; i--) {   // 新场次优先
+        var r = D.records[i], s = sessOf(r.s);
+        if (F.date && s.date.indexOf(F.date) < 0 && s.dateLong.indexOf(F.date) < 0) continue;
+        if (F.jp && !has(r.jp, F.jp)) continue;
+        if (F.zh && !has(r.zh, F.zh)) continue;
+        if (ql && !has(r.jp, ql) && !has(r.zh, ql)) continue;
         recTotal++;
         if (recRows.length < LIMIT.rec) {
-          var s = sessOf(r.s);
           // 命中日文就主显示日文，命中译文就主显示译文，避免高亮落在看不见的地方
-          var main = has(r.zh, ql) ? r.zh : (r.jp || r.zh || '');
-          var sub = has(r.zh, ql) ? (r.jp || '') : (r.zh || '');
+          var main = has(r.zh, term) ? r.zh : (r.jp || r.zh || '');
+          var sub = has(r.zh, term) ? (r.jp || '') : (r.zh || '');
           recRows.push({
             label: '逐字稿', meta: s.date + ' ' + r.t,
-            text: snip(main, q, 68), sub: sub ? snip(sub, q, 68) : '',
+            text: snip(main, term, 68), sub: sub ? snip(sub, term, 68) : '',
             href: '#/archive/' + r.s + '?t=' + encodeURIComponent(r.t)
           });
         }
       }
+      if (recTotal) groups.push({ name: '逐字稿', total: recTotal, rows: recRows });
     }
-    if (recTotal) groups.push({ name: '逐字稿', total: recTotal, rows: recRows });
 
     var qRows = [], qTotal = 0;
     D.quotes.forEach(function (x) {
       var scText = x.sc ? (x.sc.name + ' ' + x.sc.text) : '';
-      if (!has(scText + ' ' + x.jp + ' ' + x.zh + ' ' + x.note + ' ' + x.tag, ql)) return;
+      if (F.tag && x.tag.toLowerCase().indexOf(F.tag.toLowerCase()) < 0) return;
+      if (F.date && x.date.indexOf(F.date) < 0) return;
+      if (F.sc && scText.toLowerCase().indexOf(F.sc.toLowerCase()) < 0) return;
+      if (F.jp && !has(x.jp, F.jp)) return;
+      if (F.zh && !has(x.zh, F.zh)) return;
+      if (ql && !has(scText + ' ' + x.jp + ' ' + x.zh + ' ' + x.note + ' ' + x.tag, ql)) return;
       qTotal++;
       if (qRows.length < LIMIT.quote) {
-        var qmain = has(x.zh, ql) ? x.zh : (has(x.jp, ql) ? x.jp : x.zh);
+        var qmain = has(x.zh, term) ? x.zh : (has(x.jp, term) ? x.jp : x.zh);
         var qsub = qmain === x.zh ? x.jp : x.zh;
         qRows.push({
           label: '摘录 · ' + x.tag, meta: x.date + ' ' + x.t,
-          text: snip(qmain, q, 68), sub: snip(qsub, q, 68),
+          text: snip(qmain, term, 68), sub: snip(qsub, term, 68),
           href: '#/quotes?focus=' + encodeURIComponent(x.id)
         });
       }
     });
     if (qTotal) groups.push({ name: '摘录', total: qTotal, rows: qRows });
 
-    var dRows = [], dTotal = 0;
-    D.diary.forEach(function (d) {
-      if (!has(dText(d), ql)) return;
-      dTotal++;
-      if (dRows.length < LIMIT.diary) dRows.push({
-        label: '日记', meta: d.dateLong + ' ' + d.week,
-        text: snip(d.title + ' — ' + (d.summary || (d.body || [])[0] || ''), q, 68),
-        sub: '', href: '#/diary/' + encodeURIComponent(d.key)
+    if (!quoteOnly && !F.jp && !F.zh) {
+      var dRows = [], dTotal = 0;
+      D.diary.forEach(function (d) {
+        if (F.date && d.date.indexOf(F.date) < 0 && d.dateLong.indexOf(F.date) < 0) return;
+        if (ql && !has(dText(d), ql)) return;
+        dTotal++;
+        if (dRows.length < LIMIT.diary) dRows.push({
+          label: '日记', meta: d.dateLong + ' ' + d.week,
+          text: snip(d.title + ' — ' + (d.summary || (d.body || [])[0] || ''), term, 68),
+          sub: '', href: '#/diary/' + encodeURIComponent(d.key)
+        });
       });
-    });
-    if (dTotal) groups.push({ name: '日记', total: dTotal, rows: dRows });
+      if (dTotal) groups.push({ name: '日记', total: dTotal, rows: dRows });
 
-    var sRows = [], sTotal = 0;
-    D.sessions.forEach(function (s) {
-      if (!has(s.date + ' ' + s.dateLong + ' ' + s.week + ' ' + s.start + ' ' + s.end, ql)) return;
-      sTotal++;
-      if (sRows.length < LIMIT.session) sRows.push({
-        label: '场次', meta: s.week,
-        text: s.dateLong + ' · ' + s.start + ' – ' + s.end + ' · ' + s.count + ' 条记录',
-        sub: '', href: '#/archive/' + s.id
+      var sRows = [], sTotal = 0;
+      D.sessions.forEach(function (s) {
+        if (F.date && s.date.indexOf(F.date) < 0 && s.dateLong.indexOf(F.date) < 0) return;
+        if (!F.date && !has(s.date + ' ' + s.dateLong + ' ' + s.week + ' ' + s.start + ' ' + s.end, ql)) return;
+        sTotal++;
+        if (sRows.length < LIMIT.session) sRows.push({
+          label: '场次', meta: s.week,
+          text: s.dateLong + ' · ' + s.start + ' – ' + s.end + ' · ' + s.count + ' 条记录',
+          sub: '', href: '#/archive/' + s.id
+        });
       });
-    });
-    if (sTotal) groups.push({ name: '场次', total: sTotal, rows: sRows });
+      if (sTotal) groups.push({ name: '场次', total: sTotal, rows: sRows });
+    }
 
-    return { groups: groups, recTotal: recTotal };
+    return { groups: groups, recTotal: recTotal, term: term };
   }
 
   function render(q) {
@@ -1995,7 +2470,7 @@
       if (cnt) cnt.textContent = '输入关键词开始检索';
       return;
     }
-    var res = collect(q), html = '', total = 0;
+    var ctx = parseQuery(q), res = collect(q, ctx), html = '', total = 0;
     res.groups.forEach(function (g) {
       total += g.total;
       html += '<div class="sd-group"><div class="sd-gtitle"><b>' + escS(g.name) + '</b>' +
@@ -2005,14 +2480,14 @@
         items.push(row);
         html += '<button class="sd-item" data-i="' + idx + '" type="button">' +
           '<div class="si-top"><em>' + escS(row.label) + '</em>' + escS(row.meta) + '</div>' +
-          '<div class="si-text">' + markEsc(escS(row.text), q) + '</div>' +
-          (row.sub ? '<div class="si-sub">' + markEsc(escS(row.sub), q) + '</div>' : '') + '</button>';
+          '<div class="si-text">' + markEsc(escS(row.text), ctx.text) + '</div>' +
+          (row.sub ? '<div class="si-sub">' + markEsc(escS(row.sub), ctx.text) + '</div>' : '') + '</button>';
       });
       html += '</div>';
     });
     if (res.recTotal > LIMIT.rec) {
       var k = items.length;
-      items.push({ href: '#/archive/' + D.sessions[D.sessions.length - 1].id + '?q=' + encodeURIComponent(q) });
+      items.push({ href: '#/archive/' + D.sessions[D.sessions.length - 1].id + '?q=' + encodeURIComponent(ctx.text) });
       html += '<div class="sd-group"><button class="sd-item" data-i="' + k + '" type="button">' +
         '<div class="si-text">在逐字稿里查看全部 ' + res.recTotal + ' 条结果 →</div></button></div>';
     }
@@ -2120,4 +2595,18 @@
   });
 
   update();
+})();
+
+/* ---------- 离线可用 ----------
+   manifest 动态注入，避免打包器改写路径；SW 同源注册，失败也不影响站点正常使用。 */
+(function () {
+  'use strict';
+  var link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = 'manifest.webmanifest';
+  document.head.appendChild(link);
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
 })();
