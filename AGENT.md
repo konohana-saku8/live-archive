@@ -200,7 +200,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
   "jp": "日语原文", "zh": "译文", "pics": [], "url": "https://www.bilibili.com/opus/..." }
 ```
 
-- 只导 `config.toml [capture] mid` 这位 up 主，按 `pub_ts` 倒序；正文开头的零宽空格由导出脚本去掉。
+- 只导 `config.toml [capture] mid` 这位 up 主，按 `pub_ts` 倒序；正文开头的零宽空格由导出脚本去掉。正文、译文和配图都为空的动态（`DYNAMIC_TYPE_LIVE_RCMD` 开播推送）不导出，否则挂进日记会变成空卡片。
 - **不在站上单独成页**：gen_data 按日期把动态挂进对应那篇日记的 `diary[].dyn`（同一天两场按时间就近分配，例如 16:32 归 16:33 那场），日记详情页在正文前渲染这一栏；当天没有日记、或那篇没有动态，就都不出现。`DATA.dynamics` 顶层数组已取消，总数仍在 `meta.dynamicCount`。
 - capture 本机库通常为空，脚本默认 ssh 到 `v20` 只读查手机库；加 `--db PATH` 才切本地库。重新抓过动态后重跑导出 + 构建。
 

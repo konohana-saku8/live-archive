@@ -79,6 +79,10 @@ def normalize(rows):
                 pics = json.loads(pics)
             except (TypeError, ValueError):
                 pics = []
+        jp, zh = clean(r.get('text')), clean(r.get('text_trans'))
+        # LIVE_RCMD 这类开播推送没有正文也没有图，挂到日记里会变成空卡片
+        if not jp and not zh and not pics:
+            continue
         url = clean(r.get('jump_url'))
         if url.startswith('//'):
             url = 'https:' + url
@@ -91,8 +95,8 @@ def normalize(rows):
             'time': dt.strftime('%H:%M'),
             'month': dt.strftime('%Y-%m'),
             'type': clean(r.get('dyn_type')),
-            'jp': clean(r.get('text')),
-            'zh': clean(r.get('text_trans')),
+            'jp': jp,
+            'zh': zh,
             'pics': [p for p in pics if isinstance(p, str) and p] if isinstance(pics, list) else [],
             'url': url,
         })
