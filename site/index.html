@@ -64,6 +64,10 @@
 
 <main id="app"></main>
 
+<!-- 跟稿播放条挂在这里，独立于 #app：main 的淡入动画带 transform，
+     会让 fixed 子元素相对它定位，播放条就滚出视口了。 -->
+<div id="playerDock"></div>
+
 <footer class="foot">
   <div class="foot-top">
     <div class="foot-id">

@@ -295,7 +295,9 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 
 ### 逐字稿时间轴 / SC 视图 / 主题页 / 热力图（2026-11-24）
 
-- **文字时间轴**（`bindTimeline()`，`app.js`）：每条 `.tr` 带 `data-t`，游标位置由「视口里已滚过吸顶安全线的最后一行」决定，手动滚动、拖轨道、点 ribbon、跟稿播放共用 `markRow()` 一套更新。`syncTimelineRows()` 在每次 `renderList()` 后重新采集行引用（搜索/筛选会重建 DOM）。播放按钮按 `SPEEDS=[1,2,4]` 切速、逐行 scrollTo + 加 `.reading` 高亮；定时器与滚动监听统一挂在 `live` 对象上，`stopLive()` 在换路由时清理。播放/倍速按钮靠左端，避开右侧悬浮音乐抽屉。
+- **文字时间轴**（`bindTimeline()`，`app.js`）：每条 `.tr` 带 `data-t`，游标位置由「视口里已滚过吸顶安全线的最后一行」决定，手动滚动、拖轨道、点 ribbon、跟稿播放共用 `markRow()` 一套更新。`syncTimelineRows()` 在每次 `renderList()` 后重新采集行引用（搜索/筛选会重建 DOM）。播放按钮按 `SPEEDS=[1,2,4]` 切速、逐行 scrollTo + 加 `.reading` 高亮；定时器与滚动监听统一挂在 `live` 对象上，`stopLive()` 在换路由时清理。
+- **播放条固定 + 拖动口径**（2026-11-24 用户指定）：播放/倍速/时间/轨道做成**底部固定播放条**（类网易云网页版），播放时页面一直滚，控件始终够得到。拖动时 `pointerdown`/`pointermove` 只更新滑块与时间字（`paint(f, clockAt(f))`），**松手 `pointerup` 才 `seekByX()` 滚动定位**——边拖边跳会让滑块跟着页面跑掉。窄屏把音乐抽屉与回顶按钮抬到播放条上方；`body.has-player` 预留底部留白。
+- **播放条的 fixed 陷阱**：`index.html` 的 `<div id="playerDock">` 必须挂在 `<main id="app">` **之外**。`playPageIn()` 给 main 加的 `.page-in` 动画带 `transform`，会创建 fixed 包含块；播放条若放在 main 内会被定位到文档底部（实测 `getBoundingClientRect().top ≈ 43000`）而不是视口。`stopLive()` 清空 dock 与 `.has-player`，`paintTranscript()` 开头也调它，换场次同样清理。
 - **时间映射**：`baseMin` 已是开播当天的总分钟，`want = baseMin*60 + frac*dur*60`；跨零点场次（开播 ≥12 点）用 `sessionSec()` 给 00:xx 的行 +86400。别在 `want` 里再额外加开播小时，会重复。
 - **只看 SC**：逐字稿里**没有**精确的 SC 边界（话题 0 只是「打赏/SC」关键词分类，她的回应散落在后续行）。所以 `scBlock()` 用本场 `D.quotes` 里带 `sc` 字段的摘录当 SC 单元：观众原文作引用、她的 `jp/zh` 作跟帖，附「在原稿中定位」深链。数据来源可靠、不靠猜边界。
 - **凌晨场夜景**：`paintTranscript()` 按开播小时 `<6 || >=20` 调 `setNightScene()` 给 body 加 `.is-night`（复用 `home-night.webp`），换路由由 `route()` 统一清除。

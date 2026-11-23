@@ -1250,6 +1250,8 @@ a.dentry.dmini .dlinks{margin-top:16px;padding-top:13px}
 .totop svg{width:20px;height:20px;display:block}
 @media(max-width:640px){
   .totop{left:18px;right:auto;bottom:18px;width:42px;height:42px}
+  /* 播放条贴底时，把棱角分明的音乐抽屉与回顶按钮抬到它上面 */
+  body.has-player .totop,body.has-player .bgm{bottom:72px}
 }
 
 /* ---------- 阅读进度条 ---------- */
@@ -1269,8 +1271,22 @@ body.is-night .amb-veil{background:
   linear-gradient(90deg,rgba(10,8,7,.86) 0%,rgba(10,8,7,.6) 40%,rgba(10,8,7,.3) 78%,rgba(10,8,7,.55) 100%),
   linear-gradient(180deg,rgba(10,8,7,.5) 0%,transparent 32%,transparent 62%,rgba(10,8,7,.75) 100%)}
 
-/* ---------- 文字时间轴 ---------- */
-.tl{display:flex;align-items:center;gap:12px;margin:6px 0 22px;flex-wrap:wrap}
+/* ---------- 跟稿播放条（底部固定） ----------
+   跟稿播放时页面会一直往下滚，控件必须始终够得到，所以做成 fixed 浮层，
+   像网易云网页版的底部播放条。只在逐字稿页出现，离开时由 stopLive() 撤掉 class。 */
+body.has-player{padding-bottom:82px}
+.tl{
+  position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:70;
+  width:min(1080px,calc(100% - 28px));
+  display:flex;align-items:center;gap:12px;
+  padding:9px 16px;
+  background:rgba(20,16,14,.96);
+  border:1px solid var(--line-strong);border-bottom:none;
+  border-radius:14px 14px 0 0;
+  box-shadow:0 -12px 34px rgba(0,0,0,.5);
+  backdrop-filter:blur(12px);
+}
+.tl-tag{font:11px/1 var(--mono);color:var(--dim);white-space:nowrap;flex:0 0 auto}
 .tl-play{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:99px;
   border:1px solid var(--line-strong);background:rgba(255,255,255,.03);
   color:var(--ink-2);font-size:12px;letter-spacing:.03em;white-space:nowrap;transition:.2s}
@@ -1339,7 +1355,8 @@ body.is-night .amb-veil{background:
   .tgrid{grid-template-columns:1fr;padding:24px 0 6px;gap:12px}
   .tc-go{opacity:1}
   .hero-copy.tdetail h1{font-size:32px}
-  .tl{ gap:8px}
+  .tl{left:0;transform:none;width:100%;gap:8px;padding:8px 10px;border-radius:12px 12px 0 0}
+  .tl-tag{display:none}
   .tl-label{display:none}
   .tl-play{padding:8px 10px}
 }

@@ -16,6 +16,10 @@
     if (live.timer) { clearInterval(live.timer); live.timer = 0; }
     if (live.onScroll) { window.removeEventListener('scroll', live.onScroll); live.onScroll = 0; }
     live.reading = null;
+    // 跟稿播放条是 fixed 浮层，只在逐字稿页存在；离开时把预留的底部空间一并撤掉
+    document.body.classList.remove('has-player');
+    var dock = document.getElementById('playerDock');
+    if (dock) dock.innerHTML = '';
   }
 
   // HH:MM[:SS] → 当天秒数；跨零点场次由调用方用 startH 决定要不要 +86400
@@ -1108,6 +1112,7 @@
   /* ---------- 逐字稿区块：由存档页就地渲染进 #transcriptBox ---------- */
   function paintTranscript(sid, jumpT, initialQ) {
     if (sid == null || !D.sessions[sid]) return;
+    stopLive();   // 同页换场次也要收掉上一场的定时器、滚动监听与播放条
     // 换场次时清掉上一场的检索词与筛选，别把旧状态带过来
     state.q = initialQ || '';
     state.hideEmpty = false;
@@ -1234,6 +1239,22 @@
 
     var qn = D.quotes.filter(function (q) { return q.s === sid; }).length;
 
+    // 跟稿播放条挂在 #app 之外（见 index.html）：播放时页面会一直滚，
+    // 控件必须始终够得到；拖动时只更新滑块，松手才定位，不会边拖边跳。
+    document.getElementById('playerDock').innerHTML =
+      '<div class="tl" id="tl">' +
+        '<span class="tl-tag">' + esc(cur.date.replace('-', '.')) + ' 场</span>' +
+        '<button class="tl-play" id="tlPlay" type="button" aria-label="播放逐字稿">' +
+          '<span class="tl-ico">▶</span><span class="tl-label">跟稿播放</span></button>' +
+        '<button class="tl-speed" id="tlSpeed" type="button" title="切换播放速度">1×</button>' +
+        '<span class="tl-now" id="tlNow">' + esc(cur.start) + '</span>' +
+        '<div class="tl-track" id="tlTrack" role="slider" tabindex="0" aria-label="时间轴" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+          '<div class="tl-ribbon">' + ribbon + '</div>' +
+          '<div class="tl-head" id="tlHead"><i></i></div>' +
+        '</div>' +
+        '<span class="tl-end">' + esc(cur.end) + '</span>' +
+      '</div>';
+
     document.getElementById('transcriptBox').innerHTML =
       '<section class="arch-single">' +
         '<button class="cal-backtop" type="button" data-backtop="1">↑ 回到日历</button>' +
@@ -1249,19 +1270,6 @@
         '<div class="ribbon-wrap"><div class="ribbon" id="ribbon">' + ribbon + '</div>' +
           '<div class="ribbon-legend">' + legend + '</div></div>' +
         (toc ? '<div class="toc">' + toc + '</div>' : '') +
-        // 文字时间轴：拖动定位到任意时刻；播放像「跟着稿子走」，逐行高亮并自动滚动。
-        // 播放与倍速都在左端，宽屏时不会被右侧悬浮的音乐抽屉压住。
-        '<div class="tl" id="tl">' +
-          '<button class="tl-play" id="tlPlay" type="button" aria-label="播放逐字稿">' +
-            '<span class="tl-ico">▶</span><span class="tl-label">跟稿播放</span></button>' +
-          '<button class="tl-speed" id="tlSpeed" type="button" title="切换播放速度">1×</button>' +
-          '<span class="tl-now" id="tlNow">' + esc(cur.start) + '</span>' +
-          '<div class="tl-track" id="tlTrack" role="slider" tabindex="0" aria-label="时间轴" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
-            '<div class="tl-ribbon">' + ribbon + '</div>' +
-            '<div class="tl-head" id="tlHead"><i></i></div>' +
-          '</div>' +
-          '<span class="tl-end">' + esc(cur.end) + '</span>' +
-        '</div>' +
         '<div class="tools">' +
           '<label class="search"><span class="ico">⌕</span><input id="q" placeholder="搜索这一场，或直接全库检索…" autocomplete="off"></label>' +
           '<label class="toggle"><input type="checkbox" id="scOnly">只看 SC</label>' +
@@ -1297,6 +1305,7 @@
     });
 
     bindTimeline(sid, cur, baseMin, jump);
+    document.body.classList.add('has-player');   // 给固定播放条留出底部空间
 
     // ribbon / 时间轴里的小色块可点：跳到对应分钟
     box.querySelectorAll('.ribbon i[data-t]').forEach(function (i) {
@@ -1403,10 +1412,13 @@
     live.onScroll = onScroll;
     window.addEventListener('scroll', onScroll, { passive: true });
 
+    function fracAt(clientX) {
+      var r = track.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    }
     // 拖动 / 点击轨道：比例 → 时间 → 落位
     function seekByX(clientX) {
-      var r = track.getBoundingClientRect();
-      var frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      var frac = fracAt(clientX);
       paint(frac, null);
       var rows = st.rows;
       if (!rows.length) return;
@@ -1428,11 +1440,21 @@
       if (e.button != null && e.button !== 0) return;
       st.dragging = true;
       pause();
-      seekByX(e.clientX);
+      // 按下只预览滑块位置：页面不滚动，高亮行不变，才能一口气拖到目标
+      var f = fracAt(e.clientX);
+      paint(f, clockAt(f));
       track.setPointerCapture && track.setPointerCapture(e.pointerId);
     }
-    function move(e) { if (st.dragging) seekByX(e.clientX); }
-    function up() { st.dragging = false; }
+    function move(e) {
+      if (!st.dragging) return;
+      var f = fracAt(e.clientX);
+      paint(f, clockAt(f));   // 拖动中只更新滑块与时间，不定位
+    }
+    function up(e) {
+      if (!st.dragging) return;
+      st.dragging = false;
+      if (e && e.type !== 'pointercancel') seekByX(e.clientX);  // 松手才跳到那一行
+    }
     track.addEventListener('pointerdown', down);
     track.addEventListener('pointermove', move);
     track.addEventListener('pointerup', up);
