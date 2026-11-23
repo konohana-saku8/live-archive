@@ -291,7 +291,18 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 - 外部旧链接仍要能用：`#/archive/<sid>`、`?t=`、`?q=` 走同一个页面，只是把日历翻到那天并直接选中该场（搜索/摘录/日记/首页的深链都依赖它）。`?m=YYYY-MM`、`?d=YYYY-MM-DD` 可深链到指定月份/日期。
 - 同一天可能有两场（白天场 + 深夜场），必须按 `dayKey(s) = dateLong.replace(/\./g,'-')` 聚合，不能按 `date`（`MM-DD` 无年份）或一对一映射。
 - **不要展示「最长连续开播 N 天」**：那是用户自己记录的连续性，火羽本来就每天直播，写在这里没有意义（用户 2026-11-15 明确要求删掉，相关的 UTC 日序号工具也一并移除了）。
-- 换场次时 `paintTranscript()` 要重置 `state.q` / `state.hideEmpty`，否则上一场的检索词会带进新场。`?t=` 的摘录校准落位逻辑（`quoteAt` / `dice` / `jump`）原样保留。
+- 换场次时 `paintTranscript()` 要重置 `state.q` / `state.hideEmpty` / `state.scOnly`，否则上一场的检索词与筛选会带进新场。`?t=` 的摘录校准落位逻辑（`quoteAt` / `dice` / `jump`）原样保留。
+
+### 逐字稿时间轴 / SC 视图 / 主题页 / 热力图（2026-11-24）
+
+- **文字时间轴**（`bindTimeline()`，`app.js`）：每条 `.tr` 带 `data-t`，游标位置由「视口里已滚过吸顶安全线的最后一行」决定，手动滚动、拖轨道、点 ribbon、跟稿播放共用 `markRow()` 一套更新。`syncTimelineRows()` 在每次 `renderList()` 后重新采集行引用（搜索/筛选会重建 DOM）。播放按钮按 `SPEEDS=[1,2,4]` 切速、逐行 scrollTo + 加 `.reading` 高亮；定时器与滚动监听统一挂在 `live` 对象上，`stopLive()` 在换路由时清理。播放/倍速按钮靠左端，避开右侧悬浮音乐抽屉。
+- **时间映射**：`baseMin` 已是开播当天的总分钟，`want = baseMin*60 + frac*dur*60`；跨零点场次（开播 ≥12 点）用 `sessionSec()` 给 00:xx 的行 +86400。别在 `want` 里再额外加开播小时，会重复。
+- **只看 SC**：逐字稿里**没有**精确的 SC 边界（话题 0 只是「打赏/SC」关键词分类，她的回应散落在后续行）。所以 `scBlock()` 用本场 `D.quotes` 里带 `sc` 字段的摘录当 SC 单元：观众原文作引用、她的 `jp/zh` 作跟帖，附「在原稿中定位」深链。数据来源可靠、不靠猜边界。
+- **凌晨场夜景**：`paintTranscript()` 按开播小时 `<6 || >=20` 调 `setNightScene()` 给 body 加 `.is-night`（复用 `home-night.webp`），换路由由 `route()` 统一清除。
+- **主题索引** `#/topics` / `#/topics/<id>`：主题词表 `THEMES` 写在 `app.js` 前端（12 个，含中日关键词），`themeHits()` 对 `D.quotes` 与 `D.records` 做子串匹配；详情页摘录全列、原话片段按场次倒序每场最多 6 条。**改主题/关键词不用重跑数据管线**，也不用改 `gen_data.py`。
+- **首页开播热力图** `heatmapHTML()`：最近 16 周方格，`byDay` 取每天场数定深浅，有直播的格子链到 `#/archive?d=YYYY-MM-DD`。不写「最长连续开播 N 天」（口径同上）。
+- **换页淡入 / 阅读进度**：`playPageIn()` 给 `#app` 加 `.page-in`（`prefers-reduced-motion` 下跳过）；`updateProgress()` 把滚动比例写到 `#readprog` 的 `scaleX`。两者都在 `index.html` / `style.css` 里有对应节点与样式。
+- 自检脚本 `.state/verify_ui.js`（headless Chrome + CDP）覆盖以上交互与 390 窄屏溢出，改动这部分前端后可跑一遍；`.state/` 不入库。
 
 ---
 

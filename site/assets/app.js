@@ -4,10 +4,31 @@
   var D = window.DATA;
   var app = document.getElementById('app');
 
-  var state = { q: '', hideEmpty: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false };
+  var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
+
+  // 时间轴 / 逐字稿的瞬时交互（定时器、滚动监听）挂在同一个对象上，
+  // 切场次或换路由时统一 destroy，避免旧定时器操作已经不存在的 DOM。
+  var live = { timer: 0, onScroll: 0, reading: null };
+  function stopLive() {
+    if (live.timer) { clearInterval(live.timer); live.timer = 0; }
+    if (live.onScroll) { window.removeEventListener('scroll', live.onScroll); live.onScroll = 0; }
+    live.reading = null;
+  }
+
+  // HH:MM[:SS] → 当天秒数；跨零点场次由调用方用 startH 决定要不要 +86400
+  function hmsSec(t) { var p = String(t).split(':'); return (+p[0]) * 3600 + (+p[1]) * 60 + (+(p[2] || 0)); }
+  function sessionSec(t, startH) {
+    var s = hmsSec(t);
+    return (startH >= 12 && s < 12 * 3600) ? s + 86400 : s;
+  }
+  // 让目标条停在吸顶导航下方，而不是被它盖住
+  function topPad() {
+    var top = document.querySelector('.top');
+    return (top ? top.offsetHeight : 62) + 20;
+  }
 
   /* ---------- utils ---------- */
   function esc(s) {
@@ -209,10 +230,18 @@
     document.body.classList.toggle('is-home', view === 'home');
   }
 
+  // 逐字稿页随所选场次的开播时段切场景：凌晨档配夜景，其余用默认插画。
+  // 只在存档页生效，离开时由 route 统一清除，避免残留到别的栏目。
+  function setNightScene(on) { document.body.classList.toggle('is-night', !!on); }
+
   function route() {
+    stopLive();                 // 清掉上一页的时间轴定时器与滚动监听
+    setNightScene(false);
+    updateProgress();
     var r = parseHash();
     state.q = '';
     state.hideEmpty = false;
+    state.scOnly = false;
     if (r.view === 'quotes') { setNav('quotes'); renderQuotes(); }
     // 存档只有一个页面：日历选日 → 选场次 → 同页展开逐字稿
     else if (r.view === 'archive') {
@@ -223,12 +252,35 @@
       });
     }
     else if (r.view === 'diary') { setNav('diary'); renderDiary(r.seg1); }
+    else if (r.view === 'topics') { setNav('topics'); renderTopics(r.seg1); }
     // 动态已经并进各篇日记，旧的 #/dynamics 链接引导到日记列表，别静悄悄回首页
     else if (r.view === 'dynamics') { location.replace('#/diary'); return; }
     else if (r.view === 'about') { setNav('about'); renderAbout(); }
     else { setNav('home'); renderHome(); }
     window.scrollTo(0, 0);
+    playPageIn();
+    updateProgress();
   }
+
+  // 换页时整块内容做一次极短的淡入（prefers-reduced-motion 下跳过）
+  function playPageIn() {
+    if (quiet || !app.animate) return;
+    app.classList.remove('page-in');
+    void app.offsetWidth;                       // 强制回流，让动画能重新触发
+    app.classList.add('page-in');
+  }
+
+  // 阅读进度条：整页滚动比例映射到顶端细线的宽度
+  var progEl = document.getElementById('readprog');
+  function updateProgress() {
+    if (!progEl) return;
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    var p = h > 0 ? Math.min(1, Math.max(0, window.pageYOffset / h)) : 0;
+    progEl.firstElementChild.style.transform = 'scaleX(' + p.toFixed(4) + ')';
+    progEl.classList.toggle('on', window.pageYOffset > 40);
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  window.addEventListener('resize', updateProgress, { passive: true });
   window.addEventListener('hashchange', route);
 
   window.addEventListener('keydown', function (e) {
@@ -258,6 +310,44 @@
       return '<i style="left:' + left.toFixed(2) + '%;width:' + w.toFixed(2) + '%;background:' + col +
         '" title="' + (b.tp < 0 ? '无记录' : esc(tname(b.tp))) + '"></i>';
     }).join('');
+  }
+
+  // 开播热力图：按周排列的方格，颜色深浅表示那天开了几场。
+  // 只画最近 16 周，覆盖当前存档跨度；格子上带标题并链到对应日期的存档页。
+  function heatmapHTML() {
+    var weeks = 16, cell = 0;
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // 定位到本周周一
+    var mon = new Date(today);
+    mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+    mon.setDate(mon.getDate() - (weeks - 1) * 7);
+
+    var cols = [];
+    for (var w = 0; w < weeks; w++) {
+      var days = [];
+      for (var d = 0; d < 7; d++) {
+        var dt = new Date(mon);
+        dt.setDate(mon.getDate() + w * 7 + d);
+        var key = dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+        var n = byDay[key] ? byDay[key].length : 0;
+        var future = dt > today;
+        var lv = n >= 2 ? 3 : n === 1 ? 2 : 0;
+        var label = key + ' · ' + (n ? n + ' 场直播' : '没有直播');
+        days.push('<a class="hm-cell lv' + lv + (future ? ' future' : '') + '"' +
+          (n ? ' href="#/archive?d=' + key + '"' : '') +
+          ' title="' + label + '" aria-label="' + label + '"></a>');
+        cell++;
+      }
+      cols.push('<div class="hm-col">' + days.join('') + '</div>');
+    }
+    var total = D.sessions.length;
+    return '<div class="hm">' +
+      '<div class="hm-head"><div><b>开播日历</b><span>最近 ' + weeks + ' 周 · 共 ' + total + ' 场</span></div>' +
+        '<div class="hm-legend"><i class="lv0"></i><i class="lv1"></i><i class="lv2"></i><i class="lv3"></i><span>少 → 多</span></div></div>' +
+      '<div class="hm-grid">' + cols.join('') + '</div>' +
+      '<div class="hm-dow"><span>一</span><span>三</span><span>五</span><span>日</span></div>' +
+    '</div>';
   }
 
   // 话题分布：分类增长慢，条数基本恒定，适合常驻一栏；
@@ -426,6 +516,11 @@
       '<section class="sec rv sec-narrow">' +
         '<div class="sec-head"><h2>话题分布</h2><span class="more">' + num(D.meta.total) + ' 条记录的关键词归类</span></div>' +
         '<div class="tbars">' + topicBarsHTML() + '</div>' +
+      '</section>' +
+
+      '<section class="sec rv">' +
+        '<div class="sec-head"><h2>开播热力</h2><a class="more" href="#/archive">打开存档 →</a></div>' +
+        heatmapHTML() +
       '</section>' +
 
       '<section class="sec rv" id="allSessions">' +
@@ -1016,8 +1111,11 @@
     // 换场次时清掉上一场的检索词与筛选，别把旧状态带过来
     state.q = initialQ || '';
     state.hideEmpty = false;
+    state.scOnly = false;
     var cur = sess(sid);
     var startH = parseInt(cur.start.split(':')[0], 10);
+    // 凌晨档（0 点到日出前）切到夜景，营造「深夜直播」的场景感
+    setNightScene(startH < 6 || startH >= 20);
 
     // 跨零点场次：把 00:xx 视为 24:xx，保证时间比较正确。
     // 秒要算进去——只比到分钟的话，00:49:43 会落到 00:49:00 那条，前后差出十几行。
@@ -1026,12 +1124,6 @@
       var m = parseInt(p[0], 10) * 60 + parseInt(p[1], 10) + (parseInt(p[2], 10) || 0) / 60;
       if (startH >= 12 && m < 12 * 60) m += 1440;
       return m;
-    }
-
-    // 让目标条停在吸顶导航下方，而不是被它盖住
-    function topPad() {
-      var top = document.querySelector('.top');
-      return (top ? top.offsetHeight : 62) + 20;
     }
 
     // 摘录里记的时间，常常落在「那句话被识别切断的前半句」上：比如 01:09:00 只有
@@ -1116,7 +1208,8 @@
       var c = t < 0 ? '#241f1b' : tcolor(t);
       var abs = (baseMin + i) % 1440;
       var clock = String(Math.floor(abs / 60)).padStart(2, '0') + ':' + String(abs % 60).padStart(2, '0');
-      return '<i style="background:' + c + '" title="' + clock +
+      return '<i style="background:' + c + '" data-t="' + clock + ':00" role="button" tabindex="0" title="' + clock +
+        ' · ' + (t < 0 ? '无记录' : esc(tname(t))) + '" aria-label="跳到 ' + clock +
         ' · ' + (t < 0 ? '无记录' : esc(tname(t))) + '"></i>';
     }).join('');
 
@@ -1153,11 +1246,25 @@
         '</div>' +
         '<div class="arch-note">以下是<b>机器识别 + 机器翻译</b>的记录；11 月 16 日起的场次已逐条人工校对，更早场次未经校对。' +
           '只作检索用——引用前请回原直播核对。</div>' +
-        '<div class="ribbon-wrap"><div class="ribbon">' + ribbon + '</div>' +
+        '<div class="ribbon-wrap"><div class="ribbon" id="ribbon">' + ribbon + '</div>' +
           '<div class="ribbon-legend">' + legend + '</div></div>' +
         (toc ? '<div class="toc">' + toc + '</div>' : '') +
+        // 文字时间轴：拖动定位到任意时刻；播放像「跟着稿子走」，逐行高亮并自动滚动。
+        // 播放与倍速都在左端，宽屏时不会被右侧悬浮的音乐抽屉压住。
+        '<div class="tl" id="tl">' +
+          '<button class="tl-play" id="tlPlay" type="button" aria-label="播放逐字稿">' +
+            '<span class="tl-ico">▶</span><span class="tl-label">跟稿播放</span></button>' +
+          '<button class="tl-speed" id="tlSpeed" type="button" title="切换播放速度">1×</button>' +
+          '<span class="tl-now" id="tlNow">' + esc(cur.start) + '</span>' +
+          '<div class="tl-track" id="tlTrack" role="slider" tabindex="0" aria-label="时间轴" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+            '<div class="tl-ribbon">' + ribbon + '</div>' +
+            '<div class="tl-head" id="tlHead"><i></i></div>' +
+          '</div>' +
+          '<span class="tl-end">' + esc(cur.end) + '</span>' +
+        '</div>' +
         '<div class="tools">' +
           '<label class="search"><span class="ico">⌕</span><input id="q" placeholder="搜索这一场，或直接全库检索…" autocomplete="off"></label>' +
+          '<label class="toggle"><input type="checkbox" id="scOnly">只看 SC</label>' +
           '<label class="toggle"><input type="checkbox" id="hideEmpty">只看有译文</label>' +
         '</div>' +
         '<div class="count" id="count"></div>' +
@@ -1176,6 +1283,10 @@
       state.hideEmpty = e.target.checked;
       renderList(sid);
     });
+    document.getElementById('scOnly').addEventListener('change', function (e) {
+      state.scOnly = e.target.checked;
+      renderList(sid);
+    });
     box.querySelector('[data-backtop]').addEventListener('click', function () {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
@@ -1185,7 +1296,18 @@
       if (b) jump(b.getAttribute('data-jump'));
     });
 
+    bindTimeline(sid, cur, baseMin, jump);
+
+    // ribbon / 时间轴里的小色块可点：跳到对应分钟
+    box.querySelectorAll('.ribbon i[data-t]').forEach(function (i) {
+      i.addEventListener('click', function () { jump(i.getAttribute('data-t')); });
+      i.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(i.getAttribute('data-t')); }
+      });
+    });
+
     renderList(sid);
+    syncTimelineRows();   // 行渲染完成后，把当前句引用交给时间轴
     if (jumpT) {
       // route() 末尾还会把页面滚到顶上，所以等它执行完（下一帧）再落位
       requestAnimationFrame(function () { jump(jumpT, true); });
@@ -1200,6 +1322,194 @@
     setFoot();
   }
 
+  /* ---------- 文字时间轴 ----------
+     当前高亮的句子由「视口中最靠上、且已滚过顶部安全线的那一行」决定，
+     与手动滚动、拖动时间轴、跟稿播放共用同一套 update()，不维护多个真相。
+     行引用在每次 renderList 后由 syncTimelineRows() 重新采集。 */
+  var SPEEDS = [1, 2, 4];
+  function bindTimeline(sid, cur, baseMin, jump) {
+    var track = document.getElementById('tlTrack');
+    var head = document.getElementById('tlHead');
+    var now = document.getElementById('tlNow');
+    var playBtn = document.getElementById('tlPlay');
+    var speedBtn = document.getElementById('tlSpeed');
+    if (!track || !head || !playBtn) return;
+
+    var st = {
+      sid: sid, cur: cur, baseMin: baseMin, rows: [], idx: 0,
+      speed: 0, playing: false, dragging: false, jump: jump,
+      track: track, head: head, now: now,
+      playBtn: playBtn, speedBtn: speedBtn
+    };
+    live.reading = st;
+
+    function rowTime(row) { return row ? row.getAttribute('data-t') : ''; }
+    function clockAt(frac) {
+      var total = (cur.dur || 1) * 60;
+      var sec = Math.round(frac * total);
+      var abs = (baseMin * 60 + sec) % 86400;
+      return String(Math.floor(abs / 3600)).padStart(2, '0') + ':' +
+        String(Math.floor(abs / 60) % 60).padStart(2, '0') + ':' +
+        String(abs % 60).padStart(2, '0');
+    }
+
+    // 把时间轴游标与「当前时刻」文字更新到某一行 / 某个比例
+    function paint(frac, t) {
+      var f = Math.max(0, Math.min(1, frac));
+      head.style.left = (f * 100).toFixed(3) + '%';
+      track.setAttribute('aria-valuenow', Math.round(f * 100));
+      now.textContent = t || clockAt(f);
+    }
+
+    // 找离视口顶部安全线最近的一行，作为「正在读」的那句
+    function nearestRow() {
+      var rows = st.rows;
+      if (!rows.length) return -1;
+      var top = topPad();
+      var idx = 0;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].getBoundingClientRect().top - top <= 4) idx = i;
+        else break;
+      }
+      return idx;
+    }
+
+    function markRow(i) {
+      var rows = st.rows;
+      if (!rows.length) return;
+      for (var j = 0; j < rows.length; j++) rows[j].classList.remove('reading');
+      var row = rows[i];
+      if (!row) return;
+      row.classList.add('reading');
+      var sec = sessionSec(rowTime(row), parseInt(cur.start.split(':')[0], 10));
+      var frac = (sec - (baseMin * 60)) / ((cur.dur || 1) * 60);
+      paint(frac, rowTime(row).slice(0, 5));
+    }
+
+    // 滚动时只做读操作 + 写两个 style，rAF 节流，避免高频触发布局
+    var ticking = false;
+    function onScroll() {
+      if (st.playing || st.dragging || ticking) return;
+      ticking = true;
+      requestAnimationFrame(function () {
+        ticking = false;
+        if (!live.reading || live.reading !== st) return;
+        var i = nearestRow();
+        if (i < 0) return;
+        st.idx = i;
+        markRow(i);
+      });
+    }
+    live.onScroll = onScroll;
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    // 拖动 / 点击轨道：比例 → 时间 → 落位
+    function seekByX(clientX) {
+      var r = track.getBoundingClientRect();
+      var frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      paint(frac, null);
+      var rows = st.rows;
+      if (!rows.length) return;
+      var want = baseMin * 60 + frac * (cur.dur || 1) * 60;
+      // 映射到本场记录里最接近的那一条（baseMin 已是开场当天的总分钟）
+      var sh = parseInt(cur.start.split(':')[0], 10);
+      var best = 0, bestD = Infinity;
+      for (var i = 0; i < rows.length; i++) {
+        var s = sessionSec(rowTime(rows[i]), sh);
+        var d = Math.abs(s - want);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      st.idx = best;
+      markRow(best);
+      var y = rows[best].getBoundingClientRect().top + window.pageYOffset - topPad();
+      window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
+    }
+    function down(e) {
+      if (e.button != null && e.button !== 0) return;
+      st.dragging = true;
+      pause();
+      seekByX(e.clientX);
+      track.setPointerCapture && track.setPointerCapture(e.pointerId);
+    }
+    function move(e) { if (st.dragging) seekByX(e.clientX); }
+    function up() { st.dragging = false; }
+    track.addEventListener('pointerdown', down);
+    track.addEventListener('pointermove', move);
+    track.addEventListener('pointerup', up);
+    track.addEventListener('pointercancel', up);
+    track.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      pause();
+      var f = st.idx / Math.max(1, st.rows.length - 1);
+      f = Math.max(0, Math.min(1, f + (e.key === 'ArrowRight' ? 0.02 : -0.02)));
+      paint(f, null);
+      var r = track.getBoundingClientRect();
+      seekByX(r.left + f * r.width);
+    });
+
+    function setPlayUI() {
+      playBtn.classList.toggle('on', st.playing);
+      playBtn.querySelector('.tl-ico').textContent = st.playing ? '❚❚' : '▶';
+      playBtn.querySelector('.tl-label').textContent = st.playing ? '暂停' : '跟稿播放';
+      playBtn.setAttribute('aria-label', st.playing ? '暂停' : '播放逐字稿');
+    }
+    function pause() {
+      if (!st.playing) return;
+      st.playing = false;
+      if (live.timer) { clearInterval(live.timer); live.timer = 0; }
+      setPlayUI();
+    }
+    st.pause = pause;
+    function step() {
+      if (!live.reading || live.reading !== st || !st.rows.length) { pause(); return; }
+      if (st.idx >= st.rows.length - 1) { pause(); return; }
+      st.idx++;
+      var row = st.rows[st.idx];
+      var y = row.getBoundingClientRect().top + window.pageYOffset - topPad() - 40;
+      window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
+      markRow(st.idx);
+    }
+    function play() {
+      if (!st.rows.length) return;
+      if (st.idx >= st.rows.length - 1) st.idx = 0;
+      st.playing = true;
+      setPlayUI();
+      step();
+      if (live.timer) clearInterval(live.timer);
+      live.timer = setInterval(step, 1100 / SPEEDS[st.speed]);
+    }
+    playBtn.addEventListener('click', function () { st.playing ? pause() : play(); });
+    speedBtn.addEventListener('click', function () {
+      st.speed = (st.speed + 1) % SPEEDS.length;
+      speedBtn.textContent = SPEEDS[st.speed] + '×';
+      if (st.playing) { clearInterval(live.timer); live.timer = setInterval(step, 1100 / SPEEDS[st.speed]); }
+    });
+    setPlayUI();
+
+    // 供 renderList 重渲染后重新采集行；尽量把当前位置按时间落回近似行
+    st.resync = function () {
+      var keepT = st.rows.length ? rowTime(st.rows[Math.min(st.idx, st.rows.length - 1)]) : '';
+      st.rows = [].slice.call(document.querySelectorAll('#trlist .tr'));
+      st.idx = 0;
+      if (keepT) {
+        var sh = parseInt(cur.start.split(':')[0], 10);
+        var want = sessionSec(keepT, sh);
+        for (var i = 0; i < st.rows.length; i++) {
+          if (sessionSec(rowTime(st.rows[i]), sh) >= want) { st.idx = i; break; }
+        }
+      }
+      if (st.playing && !live.timer) {
+        live.timer = setInterval(step, 1100 / SPEEDS[st.speed]);
+      }
+      markRow(st.idx);
+    };
+
+    // 先把游标放在开场
+    paint(0, cur.start.slice(0, 5));
+  }
+  function syncTimelineRows() { if (live.reading && live.reading.resync) live.reading.resync(); }
+
   function rowHTML(r, q, showSession) {
     var s = sess(r.s);
     var prefix = showSession ? esc(s.date.replace('-', '.')) + ' ' : '';
@@ -1211,10 +1521,41 @@
     '</div>';
   }
 
+  // 一条 SC 块：观众原文作引用，她的回应缩进成跟帖，保留中日对照与回原稿链接。
+  // SC 在逐字稿里没有精确边界，用摘录里带 sc 的条目是最可靠的来源。
+  function scBlock(q) {
+    var sc = '<div class="qsc">' +
+      (q.sc.name ? '<b>' + esc(q.sc.name) + '</b>' : '') +
+      '<p>' + esc(q.sc.text) + '</p></div>';
+    return '<article class="tr scrow" data-t="' + esc(q.t) + '">' +
+      '<div class="t">' + esc(q.t) + '</div>' +
+      '<div class="dot" style="background:' + tcolor(0) + '"></div>' +
+      '<div><div class="screply">' + sc +
+        '<p class="jp">' + esc(q.jp) + '</p>' +
+        (q.zh ? '<p class="zh">' + esc(q.zh) + '</p>' : '') +
+        '<a class="scback" href="#/archive/' + q.s + '?t=' + encodeURIComponent(q.t) +
+          '">在原稿中定位 →</a>' +
+      '</div></div>' +
+    '</article>';
+  }
+
   function renderList(sid) {
     var box = document.getElementById('trlist');
     var cnt = document.getElementById('count');
     var q = state.q;
+
+    // 「只看 SC」：本场带 sc 的摘录按时间排，先看搜索词能命中哪些再渲染
+    if (state.scOnly) {
+      var scs = D.quotes.filter(function (x) {
+        return x.s === sid && x.sc &&
+          (!q || (x.sc.text + ' ' + x.jp + ' ' + (x.zh || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0);
+      }).sort(function (a, b) { return hmsSec(a.t) - hmsSec(b.t); });
+      cnt.textContent = '本场 ' + scs.length + ' 条 SC' + (q ? '（含「' + q + '」）' : '');
+      box.innerHTML = scs.map(scBlock).join('') ||
+        '<div class="empty">本场没有符合条件的 SC。</div>';
+      syncTimelineRows();
+      return;
+    }
 
     if (!q) {
       var rows = D.records.filter(function (r) {
@@ -1223,6 +1564,7 @@
       cnt.textContent = rows.length + ' 条' + (state.hideEmpty ? '（已隐藏无译文）' : '');
       box.innerHTML = rows.map(function (r) { return rowHTML(r, '', false); }).join('') ||
         '<div class="empty">没有符合条件的记录。</div>';
+      syncTimelineRows();
       return;
     }
 
@@ -1239,6 +1581,129 @@
     cnt.textContent = '全库检索「' + q + '」：' + hits.length + (hits.length >= 400 ? '+' : '') + ' 条';
     box.innerHTML = hits.map(function (r) { return rowHTML(r, q, true); }).join('') ||
       '<div class="empty">没有找到包含「' + esc(q) + '」的记录。</div>';
+    syncTimelineRows();
+  }
+
+  /* ---------- 主题索引 ----------
+     跨全库把「反复聊到的东西」聚成入口：宝可梦、chiikawa、FF、正月巫女……
+     命中规则是一组中日关键词，对摘录与逐字稿正文做子串匹配；关键词写在前端，
+     改主题不必重跑数据管线。点进主题看命中的摘录与逐字稿片段。 */
+  var THEMES = [
+    { id: 'pokemon', name: '宝可梦', icon: '⚡', color: '#f0b64c',
+      desc: '皮卡丘、乔伊、御三家，还有对宝可梦世界设定较真的那些段落。',
+      kw: ['ポケモン', '宝可梦', 'ピカチュウ', 'ジョーイ', '御三家', 'ロケット団'] },
+    { id: 'chiikawa', name: 'chiikawa', icon: '✿', color: '#e7a6c0',
+      desc: 'ちいかわ、哈奇瓦力、モモンガ，以及她讲的那些黑暗剧情。',
+      kw: ['ちいかわ', 'Chiikawa', 'ハチワレ', 'モモンガ', '吉伊', '哈奇'] },
+    { id: 'ff', name: 'FF / 最终幻想', icon: '⚔', color: '#7aa7e0',
+      desc: 'FF11、FF14、粉丝节与吉田——她作为玩家的老本行。',
+      kw: ['FF11', 'FF14', 'ファンフェス', 'エオルゼア', '吉田', '最终幻想'] },
+    { id: 'shrine', name: '巫女与神社', icon: '⛩', color: '#d97b6a',
+      desc: '正月里到神社帮工、巫女的规矩、御神签，和对神道那些说法的较真。',
+      kw: ['巫女', 'お正月', '神社', '御神籤', 'おみくじ', '神様'] },
+    { id: 'snow', name: '雪与雪人', icon: '❄', color: '#a8cfe8',
+      desc: '冬天的雪、堆雪人，和「五十厘米也算数」那套理论。',
+      kw: ['雪だるま', '雪人', '雪', '五十センチ'] },
+    { id: 'teeth', name: '牙齿与刷牙', icon: '🦷', color: '#8fd0c4',
+      desc: '刷牙、看牙、牙齿保健——她反复被观众催着去检查的那些事。',
+      kw: ['歯磨', '歯医', '歯ブラシ', '虫歯', '刷牙', '歯を'] },
+    { id: 'kanji', name: '汉字与词源', icon: '文', color: '#c9a86a',
+      desc: '一个字为什么这么写、一个说法从哪来，她把提问拆开讲的过程。',
+      kw: ['漢字', '語源', '词源', '言葉', '漢字の'] },
+    { id: 'cook', name: '料理与做饭', icon: '♨', color: '#d4a056',
+      desc: '做什么吃、怎么做，和那些关于味道与食材的较真。',
+      kw: ['料理', 'クッキング', '做饭', '作り方', 'レシピ'] },
+    { id: 'novel', name: '小说与读书', icon: '書', color: '#a89bc9',
+      desc: '写小说、读小说，和自我怀疑「我也能写吗」的那些夜。',
+      kw: ['小説', '読書', '小说', '读书'] },
+    { id: 'cat', name: '猫与宠物', icon: '🐾', color: '#c89b6a',
+      desc: '猫、狗、宠物，和她讲起动物时突然软下来的语气。',
+      kw: ['猫', 'ねこ', 'ネコ', '宠物', '犬'] },
+    { id: 'kyoto', name: '京都', icon: '京', color: '#8fb59e',
+      desc: '京都的天气、街巷与生活半径——她偶尔带出的所在地线索。',
+      kw: ['京都'] },
+    { id: 'platform', name: 'B站与直播', icon: '▣', color: '#66b1ff',
+      desc: '平台机制、SC、弹幕与配信这回事本身，她没少吐槽。',
+      kw: ['ビリビリ', 'bilibili', 'B站', '配信', 'スパチャ'] },
+  ];
+  function themeHits(th) {
+    var quotes = D.quotes.filter(function (q) {
+      var s = q.jp + ' ' + q.zh + ' ' + (q.note || '');
+      return th.kw.some(function (w) { return s.indexOf(w) >= 0; });
+    });
+    var recs = D.records.filter(function (r) {
+      var s = r.jp + ' ' + (r.zh || '');
+      return th.kw.some(function (w) { return s.indexOf(w) >= 0; });
+    });
+    return { quotes: quotes, recs: recs };
+  }
+
+  function renderTopics(id) {
+    var one = id ? THEMES.filter(function (t) { return t.id === id; })[0] : null;
+    if (id && !one) { location.replace('#/topics'); return; }
+    if (one) { renderTopicPage(one); return; }
+
+    var cards = THEMES.map(function (th) {
+      var h = themeHits(th);
+      return '<a class="tcard rv" href="#/topics/' + th.id + '" style="--thc:' + th.color + '">' +
+        '<span class="tc-ico">' + th.icon + '</span>' +
+        '<div class="tc-main"><h3>' + esc(th.name) + '</h3><p>' + esc(th.desc) + '</p></div>' +
+        '<div class="tc-n"><b>' + h.quotes.length + '</b> 段摘录<span>· ' + h.recs.length + ' 条记录</span></div>' +
+        '<span class="tc-go">进入 →</span></a>';
+    }).join('');
+
+    app.innerHTML =
+      '<section class="hero hero-sm">' +
+        '<div class="hero-copy">' +
+          '<div class="kicker">RECURRING SUBJECTS</div>' +
+          '<h1>反复聊到的<span class="accent">那些东西</span></h1>' +
+          '<p class="lead">从 ' + num(D.meta.total) + ' 条记录里按关键词聚出的 ' + THEMES.length +
+          ' 个主题。每个主题下是命中的摘录与原话片段，点时间可回到整场逐字稿。</p>' +
+        '</div>' +
+      '</section>' +
+      '<div class="tgrid">' + cards + '</div>';
+    playReveal();
+    setFoot();
+  }
+
+  function renderTopicPage(th) {
+    var h = themeHits(th);
+    // 逐字稿片段按场次倒序，每场最多取 6 条，避免某个高频词刷屏
+    var perSess = {};
+    var picked = [];
+    h.recs.slice().reverse().forEach(function (r) {
+      perSess[r.s] = perSess[r.s] || 0;
+      if (perSess[r.s] < 6) { picked.push(r); perSess[r.s]++; }
+    });
+    picked.sort(function (a, b) {
+      return (sess(b.s).dateLong + b.t).localeCompare(sess(a.s).dateLong + a.t);
+    });
+
+    var qhtml = h.quotes.map(quoteCard).join('') ||
+      '<div class="empty">这个主题还没有单独的摘录。</div>';
+    var rhtml = picked.map(function (r) { return rowHTML(r, '', true); }).join('') ||
+      '<div class="empty">没有命中的逐字稿片段。</div>';
+
+    app.innerHTML =
+      '<section class="hero hero-sm">' +
+        '<div class="hero-copy tdetail" style="--thc:' + th.color + '">' +
+          '<a class="back" href="#/topics">← 全部主题</a>' +
+          '<div class="kicker">SUBJECT · ' + th.icon + '</div>' +
+          '<h1>' + esc(th.name) + '</h1>' +
+          '<p class="lead">' + esc(th.desc) + '</p>' +
+          '<div class="td-stat"><b>' + h.quotes.length + '</b> 段摘录 <i>·</i> <b>' + h.recs.length +
+            '</b> 条原话</div>' +
+        '</div>' +
+      '</section>' +
+      '<section class="sec">' +
+        '<div class="sec-head"><h2><i>01</i>相关摘录</h2><span class="more">' + h.quotes.length + ' 段</span></div>' +
+        '<div class="qlist">' + qhtml + '</div>' +
+      '</section>' +
+      '<section class="sec">' +
+        '<div class="sec-head"><h2><i>02</i>原话片段</h2><span class="more">每场最多 6 条</span></div>' +
+        '<div class="trlist t-trlist">' + rhtml + '</div>' +
+      '</section>';
+    setFoot();
   }
 
   /* ---------- about ---------- */

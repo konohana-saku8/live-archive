@@ -11,6 +11,8 @@
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body class="is-home">
+<!-- 阅读进度：贴在视口顶端的一条细线，随滚动推进；只在有正文的页面显示 -->
+<div class="readprog" id="readprog" aria-hidden="true"><i></i></div>
 <!-- 氛围层：远景 → 场景 → 压暗遮罩 → 跟随鼠标的暖光 → 上浮灯尘。
      整层不吃鼠标事件，也不参与布局；JS 只在有精确指针的系统上启用多层视差与伪 3D 倾斜。
      首页用 home-night.webp（无人物、左侧留白），其余页沿用 scene-spring.webp。 -->
@@ -49,6 +51,7 @@
     <a href="#/" data-nav="home">首页</a>
     <a href="#/diary" data-nav="diary">日记</a>
     <a href="#/quotes" data-nav="quotes">摘录</a>
+    <a href="#/topics" data-nav="topics">主题</a>
     <a href="#/archive" data-nav="archive">存档</a>
     <a href="#/about" data-nav="about">关于</a>
   </nav>
