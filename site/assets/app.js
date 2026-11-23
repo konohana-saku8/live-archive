@@ -181,11 +181,6 @@
     } catch (e) { return safe; }
   }
 
-  /* ---------- global topic counts ---------- */
-  var topicCount = {};
-  D.records.forEach(function (r) { topicCount[r.tp] = (topicCount[r.tp] || 0) + 1; });
-  var topicRank = Object.keys(topicCount).sort(function (a, b) { return topicCount[b] - topicCount[a]; });
-
   /* ---------- 存档日历索引 ----------
      用 dateLong 建索引：同一天可能开两场（白天场 + 深夜场），不能按日期一对一。
      月份只保留「有场次的月」，翻月就在这些月份之间跳，不会翻出空月。 */
@@ -354,19 +349,13 @@
     '</div>';
   }
 
-  // 话题分布：分类增长慢，条数基本恒定，适合常驻一栏；
-  // 场次列表会一直涨，所以不放固定的面板里
-  function topicBarsHTML() {
-    var maxT = topicCount[topicRank[0]] || 1;
-    return topicRank.map(function (k) {
-      var i = parseInt(k, 10);
-      // 平方根刻度：最多与最少相差近百倍，线性刻度会让除首项外的柱子几乎不可见
-      var w = Math.sqrt(topicCount[k] / maxT) * 100;
-      // 宽度靠 CSS 变量交给进场动画，进入视口后从 0 长出来
-      return '<div class="tbar"><span class="name">' + esc(tname(i)) + '</span>' +
-        '<span class="track"><i class="fill" style="--w:' + w.toFixed(1) +
-        '%;background:' + tcolor(i) + '"></i></span>' +
-        '<span class="n">' + topicCount[k] + '</span></div>';
+  // 首页主题入口：原「话题分布」七成落在日常杂聊，统计条没有信息量；
+  // 换成主题索引的入口，点开就能看到命中的摘录与原话。
+  function themeChipsHTML() {
+    return THEMES.map(function (th) {
+      return '<a class="th-chip" href="#/topics/' + th.id + '" style="--thc:' + th.color + '">' +
+        '<span class="th-ico">' + th.icon + '</span>' +
+        '<span class="th-name">' + esc(th.name) + '</span></a>';
     }).join('');
   }
 
@@ -457,9 +446,9 @@
         '</div>' +
         '<aside class="hero-side rv" id="topicSide">' +
           '<div class="hs-tilt">' +
-            '<div class="hs-head"><b>话题分布</b><em>' + D.topics.length + ' 类</em></div>' +
-            '<div class="tbars">' + topicBarsHTML() + '</div>' +
-            '<div class="hs-foot">' + num(D.meta.total) + ' 条记录的关键词归类 · 按条数排序</div>' +
+            '<div class="hs-head"><b>主题索引</b><em>' + THEMES.length + ' 个主题</em></div>' +
+            '<div class="th-chips">' + themeChipsHTML() + '</div>' +
+            '<div class="hs-foot">反复聊到的那些东西 · 点开看摘录与原话</div>' +
           '</div>' +
         '</aside>' +
 
@@ -516,10 +505,10 @@
             '</div>'
           : '<div class="empty">还没有日记。</div>') +
       '</section>' +
-      // 窄屏没有右栏，话题分布在这里补一份；桌面由 hero 侧栏承担
+      // 窄屏没有右栏，主题入口在这里补一份；桌面由 hero 侧栏承担
       '<section class="sec rv sec-narrow">' +
-        '<div class="sec-head"><h2>话题分布</h2><span class="more">' + num(D.meta.total) + ' 条记录的关键词归类</span></div>' +
-        '<div class="tbars">' + topicBarsHTML() + '</div>' +
+        '<div class="sec-head"><h2>主题索引</h2><a class="more" href="#/topics">全部主题 →</a></div>' +
+        '<div class="th-chips th-chips-wide">' + themeChipsHTML() + '</div>' +
       '</section>' +
 
       '<section class="sec rv">' +

@@ -273,7 +273,8 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 
 - `tools/common.py` 的 `TOPICS` 是关键词表，`classify()` **按表顺序取第一个命中的正则**，都不中就落 `日常杂聊`。新增的 7 类（宠物/动物、音乐/唱歌、文字/词源、应援/比赛、周年/纪念、开播/收尾、中日文化）一律排在原有类别之后，避免抢走既有分类；正则要足够具体，别用「とり」「歌」这种会吃掉大量无关记录的宽词。
 - **改表后必须重跑 `python tools/export.py`**：每条记录的 `tp` 和每场的 `topics` / `ribbon` / `segs` 都是导出时算好写进 `site/data/sessions/*.json` 的。只改表不重导出，新类别永远 0 命中，而且 `OTHER_ID` 后移会让旧 `tp` 语义错位。重导出是幂等的，场次与记录正文不变，不要手改 sessions 文件。
-- 前端 `D.topics` 由 `common.TOPIC_NAMES` 生成，首页「话题标签」数字就是它的长度；话题分布条按 `D.records[].tp` 计数，两列 grid 会自动容纳更多类别。
+- 前端 `D.topics` 由 `common.TOPIC_NAMES` 生成，首页「话题标签」数字就是它的长度。
+- **首页「话题分布」统计条已撤掉**（2026-11-24 用户定稿）：23 类里「日常杂聊」占 72.5%（14081/19424），关键词逐行分类救不回来——换 17 类仍是 70%，加上下文滑窗虽能压到 29%，但数字变成「段落」语义且打赏/SC 会膨胀到 18%。展示位换成主题索引入口。`records[].tp` 仍用于逐字稿 ribbon 色带、legend、场次话题计数，**不要删 TOPICS 表或改导出流程**。
 
 ### 全站搜索与页脚（2026-11-15）
 
@@ -301,7 +302,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 - **时间映射**：`baseMin` 已是开播当天的总分钟，`want = baseMin*60 + frac*dur*60`；跨零点场次（开播 ≥12 点）用 `sessionSec()` 给 00:xx 的行 +86400。别在 `want` 里再额外加开播小时，会重复。
 - **只看 SC**：逐字稿里**没有**精确的 SC 边界（话题 0 只是「打赏/SC」关键词分类，她的回应散落在后续行）。所以 `scBlock()` 用本场 `D.quotes` 里带 `sc` 字段的摘录当 SC 单元：观众原文作引用、她的 `jp/zh` 作跟帖，附「在原稿中定位」深链。数据来源可靠、不靠猜边界。
 - **凌晨场夜景**：`paintTranscript()` 按开播小时 `<6 || >=20` 调 `setNightScene()` 给 body 加 `.is-night`（复用 `home-night.webp`），换路由由 `route()` 统一清除。
-- **主题索引** `#/topics` / `#/topics/<id>`：主题词表 `THEMES` 写在 `app.js` 前端（12 个，含中日关键词），`themeHits()` 对 `D.quotes` 与 `D.records` 做子串匹配；详情页摘录全列、原话片段按场次倒序每场最多 6 条。**改主题/关键词不用重跑数据管线**，也不用改 `gen_data.py`。
+- **主题索引** `#/topics` / `#/topics/<id>`：主题词表 `THEMES` 写在 `app.js` 前端（12 个，含中日关键词），`themeHits()` 对 `D.quotes` 与 `D.records` 做子串匹配；详情页摘录全列、原话片段按场次倒序每场最多 6 条。**改主题/关键词不用重跑数据管线**，也不用改 `gen_data.py`。首页桌面 hero 侧栏与窄屏 section 的 12 个入口都由 `themeChipsHTML()` 从同一张表生成，加主题会同步出现在这三处。
 - **首页开播热力图** `heatmapHTML()`：最近 16 周方格，`byDay` 取每天场数定深浅，有直播的格子链到 `#/archive?d=YYYY-MM-DD`。不写「最长连续开播 N 天」（口径同上）。
 - **换页淡入 / 阅读进度**：`playPageIn()` 给 `#app` 加 `.page-in`（`prefers-reduced-motion` 下跳过）；`updateProgress()` 把滚动比例写到 `#readprog` 的 `scaleX`。两者都在 `index.html` / `style.css` 里有对应节点与样式。
 - 自检脚本 `.state/verify_ui.js`（headless Chrome + CDP）覆盖以上交互与 390 窄屏溢出，改动这部分前端后可跑一遍；`.state/` 不入库。
