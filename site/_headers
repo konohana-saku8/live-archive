@@ -1,0 +1,46 @@
+# Cloudflare Pages 的响应头规则（GitHub Pages 会忽略本文件，无副作用）。
+# 两条注意：
+#   1. 同一路径命中多条规则时 Cache-Control 会被逗号拼起来，所以 /* 只放安全头、
+#      不放 Cache-Control，缓存只写在具体路径上。
+#   2. /assets/* 只有 app.js / style.css / data.js，URL 上都带 ?v=<hash>（vite.config.mjs
+#      的 closeBundle 注入），内容变了 URL 就变，可以放心 immutable。
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+
+# 入口与 Service Worker 必须每次回源校验，否则新版本发不出去
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+# PWA 清单：Cloudflare 对 .webmanifest 的 MIME 不一定正确，显式写死；
+# 缓存 1 小时，改图标或名称当天能生效
+/manifest.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+# 带版本号的打包产物
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 字幕按场次出文件：新增不影响旧文件，但重跑导出会改内容，给 10 分钟
+/subs/*
+  Cache-Control: public, max-age=600
+
+# 站点图片与背景音乐，几乎不换
+/brand/*
+  Cache-Control: public, max-age=604800
+
+/audio/*
+  Cache-Control: public, max-age=604800
+
+# 插件安装包，跟着版本走
+/download/*
+  Cache-Control: public, max-age=3600

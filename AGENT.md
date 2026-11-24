@@ -171,6 +171,29 @@ subs、插件 zip 都落在 `.build/public/`），Vite 只负责打包与发布�
 CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推送后自动
 `npm ci && npm run build` + deploy，约 40 秒生效。CI 无数据库，沿用已入库的 `site/data/subs`。
 
+### Cloudflare Pages（第二部署，2026-11-24 起）
+
+产物是纯静态 + hash 路由 + 全相对路径（`base:'./'`），挂在 `pages.dev` 根路径上不用改任何路径。
+
+- **构建配置**：Build command `npm ci && npm run build`，输出目录 `dist`，框架预设选 None。
+  环境变量 `NODE_VERSION=22`、`PYTHON_VERSION=3.12`（仓库根已放 `.node-version` / `runtime.txt` 兜底）。
+  Vite 构建前会调 `tools/gen_data.py`，所以构建机必须有 Python 3.11+，这点和 GitHub Actions 一致。
+- **必须关 Rocket Loader**（Speed → Optimization）：它会把 `type="module"` 脚本改为异步加载，
+  影响首屏渲染与 `navigator.serviceWorker.register('sw.js')` 的时机，症状是偶发白屏或 PWA 装不上。
+  Auto Minify 已被 Cloudflare 下线，无需处理。
+- **`site/_headers`**：由 `gen_data.py::copy_static()` 拷进产物根目录，Cloudflare 读取后生效
+  （GitHub Pages 会原样当静态文件发布，无人引用，无副作用）。它负责三件事：
+  - `/`、`/index.html`、`/sw.js` → `no-cache`，保证新版本能发出去；
+  - `/assets/*` → `max-age=31536000, immutable`，因为三个文件 URL 上都带 `?v=<hash>`；
+  - `/manifest.webmanifest` → 显式 `application/manifest+json`，避免 Cloudflare 按 octet-stream 返回导致 PWA 不装。
+  **注意规则会合并**：同一路径命中多条时 `Cache-Control` 会被逗号拼起来，所以 `/*` 里只放安全头，缓存只写具体路径。
+- **体积**：Cloudflare 自动 Brotli，`data.js` 3.35 MB 线上约 1 MB；单文件上限 25 MB、单次部署 2 万文件，
+  当前 56 个文件 16 MB（最大是 `audio/mata-ashita.mp3` 6.86 MB），余量充足。
+- **两种发法**：① 连 Git 仓库，push 自动构建（预览分支也给独立 URL）；② 本地构建后
+  `npx wrangler pages deploy dist --project-name live-archive`，不依赖构建机的 Node/Python 版本。
+- **Service Worker**：`CACHE` 版本号改动要 +1；预缓存从 `index.html` 里读 `assets/*?v=` 的真实地址，
+  避免和无版本号的那份各下一遍（`data.js` 3 MB+ 会被重复下载）。
+
 ### 切场规则（`common.py`）
 
 - 相邻记录间隔 > 30 分钟 → 新的一场（跨零点不拆）
