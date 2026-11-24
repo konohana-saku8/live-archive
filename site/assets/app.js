@@ -126,6 +126,8 @@
       .then(function (blob) {
         d.body = (blob && blob.body) || [];
         d.names = (blob && blob.names) || [];
+        d.scNames = (blob && blob.scNames) || [];
+        d.dmNames = (blob && blob.dmNames) || [];
         delete AD.inflight[key];
         return d;
       })
@@ -214,21 +216,26 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  // 日记正文里的观众名只做轻排版：先转义整段，再把 d.names 里的名字
-  // 包成 .dname。长名先占住位置，短名不重复套进去；正文文字保持原样。
-  function diaryText(text, names) {
+  // 日记正文里的观众名只做轻排版：先转义整段，再把名单里的名字包成 .dname。
+  // SC 与弹幕分别用 .dname-sc / .dname-dm；旧日记没有分类，继续用中性 .dname。
+  function diaryText(text, d) {
     var s = esc(text);
-    if (!names || !names.length) return s;
+    var byName = {};
+    ((d && d.names) || []).forEach(function (n) { if (n) byName[n] = ['', '']; });
+    ((d && d.scNames) || []).forEach(function (n) { if (n) byName[n] = [' dname-sc', 'SC']; });
+    ((d && d.dmNames) || []).forEach(function (n) { if (n) byName[n] = [' dname-dm', '弹幕']; });
+    var names = Object.keys(byName);
+    if (!names.length) return s;
     var used = [], spans = [];
-    names.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
-      var needle = esc(name);
+    names.sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
+      var needle = esc(name), mark = byName[name];
       if (!needle) return;
       var from = 0, idx;
       while ((idx = s.indexOf(needle, from)) !== -1) {
         var end = idx + needle.length;
         var overlap = used.some(function (r) { return idx < r[1] && end > r[0]; });
         if (!overlap) {
-          spans.push([idx, end, needle]);
+          spans.push([idx, end, needle, mark[0], mark[1]]);
           used.push([idx, end]);
         }
         from = idx + needle.length;
@@ -237,7 +244,8 @@
     spans.sort(function (a, b) { return a[0] - b[0]; });
     var out = '', pos = 0;
     spans.forEach(function (sp) {
-      out += s.slice(pos, sp[0]) + '<span class="dname">' + sp[2] + '</span>';
+      var title = sp[4] ? ' title="' + sp[4] + '"' : '';
+      out += s.slice(pos, sp[0]) + '<span class="dname' + sp[3] + '"' + title + '>' + sp[2] + '</span>';
       pos = sp[1];
     });
     return out + s.slice(pos);
@@ -789,7 +797,7 @@
     var newer = i > 0 ? D.diary[i - 1] : null;
     var older = i < D.diary.length - 1 ? D.diary[i + 1] : null;
 
-    var body = d.body.map(function (p) { return '<p>' + diaryText(p, d.names) + '</p>'; }).join('');
+    var body = d.body.map(function (p) { return '<p>' + diaryText(p, d) + '</p>'; }).join('');
     // 开播前后在 B 站发的动态：日记正文常直接引用它，所以放在正文前面当背景资料。
     // 没有动态的那几篇（10 月）就不出这一栏
     var dyns = d.dyn || [];
@@ -2596,34 +2604,86 @@
 })();
 
 /* ---------- 悬浮背景音乐 ----------
-   网易云外链播放器装进右侧抽屉；折叠状态记在 localStorage。 */
+   本地音频 + 自建控件：默认不播放，音量默认很小（30%），可拖动调节。
+   折叠状态、音量与循环记在 localStorage；播放状态不记忆，每次进站都是关闭。 */
 (function () {
   'use strict';
   var box = document.getElementById('bgm');
-  var fold = document.getElementById('bgmFold');
-  var panel = document.getElementById('bgmPanel');
-  if (!box || !fold || !panel) return;
+  var audio = document.getElementById('bgmAudio');
+  if (!box || !audio) return;
+  audio.src = 'audio/mata-ashita.m4a';   // preload=none，赋值本身不会发请求
+  function $(id) { return document.getElementById(id); }
+  var fold = $('bgmFold'), panel = $('bgmPanel'), play = $('bgmPlay'), loop = $('bgmLoop');
+  var bar = $('bgmBar'), vol = $('bgmVol'), volNum = $('bgmVolNum'), now = $('bgmNow'), dur = $('bgmDur');
   var KEY = 'hibane-bgm-v1';
-  var st = { collapsed: window.innerWidth < 720 };
-  try {
-    var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (saved && typeof saved.collapsed === 'boolean') st.collapsed = saved.collapsed;
-  } catch (e) {}
+  var st = { collapsed: window.innerWidth < 720, vol: 30, loop: true };
+  var saved = null;
+  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+  if (saved && typeof saved === 'object') {
+    if (typeof saved.collapsed === 'boolean') st.collapsed = saved.collapsed;
+    if (typeof saved.vol === 'number') st.vol = Math.max(0, Math.min(100, Math.round(saved.vol)));
+    if (typeof saved.loop === 'boolean') st.loop = saved.loop;
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+  function fmt(t) {
+    if (!isFinite(t) || t < 0) t = 0;
+    var m = Math.floor(t / 60), s = Math.floor(t % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function fill(el, ratio) { el.style.setProperty('--p', (ratio * 100).toFixed(2) + '%'); }
   var chev = fold.querySelector('.bgm-chev');
   function paint() {
     box.classList.toggle('is-collapsed', st.collapsed);
+    box.classList.toggle('is-playing', !audio.paused);
     fold.setAttribute('aria-expanded', String(!st.collapsed));
     fold.title = st.collapsed ? '展开播放器' : '收起播放器';
     panel.setAttribute('aria-hidden', String(st.collapsed));
     if ('inert' in panel) panel.inert = st.collapsed;
     if (chev) chev.textContent = st.collapsed ? '<' : '>';
+    play.setAttribute('aria-label', audio.paused ? '播放背景音乐' : '暂停背景音乐');
+    play.setAttribute('aria-pressed', String(!audio.paused));
+    loop.classList.toggle('is-on', st.loop);
+    loop.setAttribute('aria-pressed', String(st.loop));
+    audio.loop = st.loop;
+    audio.volume = st.vol / 100;
+    vol.value = st.vol;
+    volNum.textContent = st.vol;
+    fill(vol, st.vol / 100);
   }
-  fold.addEventListener('click', function () {
-    st.collapsed = !st.collapsed;
-    try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
+  function tick() {
+    now.textContent = fmt(audio.currentTime);
+    var d = audio.duration;
+    if (d && isFinite(d)) {
+      dur.textContent = fmt(d);
+      bar.value = Math.round(audio.currentTime / d * 1000);
+      fill(bar, audio.currentTime / d);
+    }
+  }
+  function start() {
+    var p = audio.play();
+    if (p && p.catch) p.catch(function () { play.title = '浏览器拦下了播放，请再点一次'; });
+  }
+  fold.addEventListener('click', function () { st.collapsed = !st.collapsed; save(); paint(); });
+  play.addEventListener('click', function () {
+    if (audio.paused) start(); else audio.pause();
     paint();
   });
+  loop.addEventListener('click', function () { st.loop = !st.loop; save(); paint(); });
+  vol.addEventListener('input', function () { st.vol = Number(vol.value); save(); paint(); });
+  bar.addEventListener('input', function () {
+    var d = audio.duration;
+    if (!d || !isFinite(d)) return;
+    audio.currentTime = Number(bar.value) / 1000 * d;
+    fill(bar, Number(bar.value) / 1000);
+    now.textContent = fmt(audio.currentTime);
+  });
+  audio.addEventListener('timeupdate', tick);
+  audio.addEventListener('loadedmetadata', tick);
+  audio.addEventListener('play', paint);
+  audio.addEventListener('pause', paint);
   paint();
+  tick();
+  fill(bar, 0);
 })();
 
 /* ---------- 全站搜索 ----------

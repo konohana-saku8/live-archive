@@ -267,6 +267,8 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 19. **实时同传是独立译源**（2026-11-22 用户指定）：直播间有观众（如「御坂19106号」）做逐句实时翻译，弹幕里能查到。判断她某句是不是 ASR 误识时，拿同传译文做交叉验证：本地 ASR 与同传一致 → 不是听错、是原文如此；两者分歧才考虑 ASR 错。同传也能精确定位她在念哪条 SC/弹幕（比只看时间戳准）。
 20. **错误归因分三层**（2026-11-22 用户指定）：区分「ASR 听错」「翻译环节错」「她照念 SC 原文」三件事。判据链：SC 原文写法（可能是不规范的作者自造词）→ 该条有没有自带 `message_trans`（没有就说明她自己找翻译器翻的）→ 两个独立译源（本地 ASR + 实时同传）是否一致。翻译环节出错不算 ASR 错、不回写数据库；她照念的词即便看着别扭也照原样写，把本意放进上下文讲清楚，正文和 `note` 都不标注「ASR 错误 / 主播念错」。
 21. **突击场的时间戳校准**（2026-11-22 用户指定）：突击直播用录播转写时，翻译库的 `Timestamp` 可能比真实直播晚几小时（两个时钟不同源）。先拿手机 live-capture 库的 `room_event` 开播时间与 SC 内容锚点（她口播某条 SC 的时刻 − 该 SC `start_time`，多取几个）算出偏移，再在 `tools/time_fixes.py` 登记时段与偏移秒数；`common.read_db()` 和 `export_subs.py::load_timing()` 都会调用它，逐字稿、场次名、字幕时间轴一起校准。**不改数据库原始记录**。校准后开场时间可能落到白天，把新场次名加进 `config.toml` 的 `time_window_keep`。日记开头交代真实开播时间与校准依据。
+22. **发送者分 SC / 弹幕两种样式**（2026-11-25 用户指定）：日记正文里的观众名不能一律同款。`diary.json` 每篇除旧 `names` 外，按手机库 `sc_message` / `danmaku` 核对后写 `scNames` 与 `dmNames`；前端给 SC 名套 `.dname-sc`、弹幕名套 `.dname-dm`，旧 `names` 只作兜底。写新日记时这一步和人名校勘（第 13、18 条）一起做，别等上线后再补。
+23. **动态必须进日记**（2026-11-25 用户指出漏加）：写日记时先跑 `python tools/export_dynamics.py` 更新 `site/data/dynamics.json`，确认开播前那条动态已在里面，再交给 `gen_data.py` 按日期挂到 `diary[].dyn`。正文提到「她发动态」「动态里那个问题」而不能在详情页看到动态卡片，就算漏了。
 
 ### 装饰插图（2026-11-14 起）
 
@@ -320,6 +322,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 
 - **文字时间轴**（`bindTimeline()`，`app.js`）：每条 `.tr` 带 `data-t`，游标位置由「视口里已滚过吸顶安全线的最后一行」决定，手动滚动、拖轨道、点 ribbon、跟稿播放共用 `markRow()` 一套更新。`syncTimelineRows()` 在每次 `renderList()` 后重新采集行引用（搜索/筛选会重建 DOM）。播放按钮按 `SPEEDS=[1,2,4]` 切速、逐行 scrollTo + 加 `.reading` 高亮；定时器与滚动监听统一挂在 `live` 对象上，`stopLive()` 在换路由时清理。
 - **播放条固定 + 拖动口径**（2026-11-24 用户指定）：播放/倍速/时间/轨道做成**底部固定播放条**（类网易云网页版），播放时页面一直滚，控件始终够得到。拖动时 `pointerdown`/`pointermove` 只更新滑块与时间字（`paint(f, clockAt(f))`），**松手 `pointerup` 才 `seekByX()` 滚动定位**——边拖边跳会让滑块跟着页面跑掉。窄屏把音乐抽屉与回顶按钮抬到播放条上方；`body.has-player` 预留底部留白。
+- **背景音乐**（2026-11-25 用户指定）：默认关闭、音量默认 30%（可调并记在 localStorage），`preload="none"`，只有点播放键才取音频。用 `site/audio/mata-ashita.m4a`（64 kbps AAC，约 1.2 MB）+ `app.js` 自建 `<audio>` 控件；**不要再换回网易云外链 iframe**——它的音量写死在跨域 iframe 内部（初始化 0.8），父页面既不能用参数也不能用消息调整。`copy_static()` 负责把 `audio/` 带进产物，`_headers` 给 `/audio/*` 缓存规则。
 - **播放条的 fixed 陷阱**：`index.html` 的 `<div id="playerDock">` 必须挂在 `<main id="app">` **之外**。`playPageIn()` 给 main 加的 `.page-in` 动画带 `transform`，会创建 fixed 包含块；播放条若放在 main 内会被定位到文档底部（实测 `getBoundingClientRect().top ≈ 43000`）而不是视口。`stopLive()` 清空 dock 与 `.has-player`，`paintTranscript()` 开头也调它，换场次同样清理。
 - **时间映射**：`baseMin` 已是开播当天的总分钟，`want = baseMin*60 + frac*dur*60`；跨零点场次（开播 ≥12 点）用 `sessionSec()` 给 00:xx 的行 +86400。别在 `want` 里再额外加开播小时，会重复。
 - **只看 SC**：逐字稿里**没有**精确的 SC 边界（话题 0 只是「打赏/SC」关键词分类，她的回应散落在后续行）。所以 `scBlock()` 用本场 `D.quotes` 里带 `sc` 字段的摘录当 SC 单元：观众原文作引用、她的 `jp/zh` 作跟帖，附「在原稿中定位」深链。数据来源可靠、不靠猜边界。

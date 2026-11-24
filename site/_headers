@@ -48,6 +48,8 @@
 /subs/*
   Cache-Control: public, max-age=600
 
-# 站点图片，几乎不换
+# 站点图片与背景音乐，几乎不换；音乐是点播放才取，不占首屏流量
 /brand/*
+  Cache-Control: public, max-age=604800
+/audio/*
   Cache-Control: public, max-age=604800

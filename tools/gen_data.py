@@ -185,8 +185,11 @@ def collect(site_dir):
             # 列表页只显示 summary（一两句），全文放在详情页
             'summary': d.get('summary', ''),
             'body': d['body'],
-            # 正文里出现的观众 uname，仅用于前端 .dname 轻排版
+            # 正文里出现的观众 uname，仅用于前端 .dname 轻排版；
+            # scNames / dmNames 决定 SC 与弹幕发送者各自用哪套样式
             'names': d.get('names') or [],
+            'scNames': d.get('scNames') or [],
+            'dmNames': d.get('dmNames') or [],
         })
 
     # 动态挂到当天那篇日记：11-05、11-22 这种一天里有两条动态的，
@@ -279,7 +282,8 @@ def write_side(public_dir, q_out, diary_out):
     h = hashlib.sha256()
     for d in diary_out:
         txt = _write_json(os.path.join(d_dir, d['key'] + '.json'),
-                          {'body': d['body'], 'names': d.get('names') or []})
+                          {'body': d['body'], 'names': d.get('names') or [],
+                           'scNames': d.get('scNames') or [], 'dmNames': d.get('dmNames') or []})
         h.update(txt.encode('utf-8'))
     return q_ver, h.hexdigest()[:10]
 
@@ -325,14 +329,19 @@ def content_version(data, site_dir):
 
 
 def copy_static(site_dir, public_dir):
-    """brand/ 原样复制：app.js 运行时会拼 brand/xxx 的路径，不能只靠打包器。
-    sw.js / manifest.webmanifest 也没有被 index.html 引用（动态注册），同样要手动带过去。
-    _headers 是 Cloudflare Pages 的缓存与 MIME 规则，必须落在产物根目录才会生效。"""
-    src = os.path.join(site_dir, 'brand')
-    if os.path.isdir(src):
-        dst = os.path.join(public_dir, 'brand')
-        os.makedirs(dst, exist_ok=True)
-        shutil.copytree(src, dst, dirs_exist_ok=True)
+    """brand/ 与 audio/ 原样复制：app.js / index.html 运行时直接拼这两个路径，
+    不能只靠打包器。sw.js / manifest.webmanifest 也没有被 index.html 引用
+    （动态注册），同样要手动带过去。_headers 是 Cloudflare Pages 的缓存与 MIME
+    规则，必须落在产物根目录才会生效。"""
+    for folder in ('brand', 'audio'):
+        src = os.path.join(site_dir, folder)
+        dst = os.path.join(public_dir, folder)
+        # 先清空目标：换格式/换歌后旧文件不能留在产物里
+        if os.path.isdir(dst):
+            shutil.rmtree(dst)
+        if os.path.isdir(src):
+            os.makedirs(public_dir, exist_ok=True)
+            shutil.copytree(src, dst)
     for name in ('sw.js', 'manifest.webmanifest', '_headers'):
         src = os.path.join(site_dir, name)
         if os.path.isfile(src):

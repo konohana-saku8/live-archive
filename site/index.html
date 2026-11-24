@@ -96,16 +96,35 @@
   </svg>
 </button>
 
-<!-- 背景音乐：网易云外链播放器，贴在右侧边缘的固定浮层，折叠后只留 "<" 把手。 -->
+<!-- 背景音乐：贴在右侧边缘的固定浮层，折叠后只留 "<" 把手。
+     音频不预加载，默认不播放，只有点播放键才取；音量默认很小，可自行调。 -->
 <aside class="bgm" id="bgm" aria-label="背景音乐">
   <button class="bgm-tab" id="bgmFold" type="button" aria-controls="bgmPanel" aria-expanded="true" title="收起播放器">
     <span class="bgm-chev" aria-hidden="true">&gt;</span>
     <span class="bgm-note" aria-hidden="true">&#9834;</span>
   </button>
   <div class="bgm-panel" id="bgmPanel">
-    <iframe class="bgm-frame" title="また明日 - MATSU" allow="autoplay" frameborder="no" border="0" marginwidth="0" marginheight="0" width="330" height="86" src="//music.163.com/outchain/player?type=2&id=2652366114&auto=1&height=66"></iframe>
+    <div class="bgm-head">
+      <span class="bgm-disc" aria-hidden="true"></span>
+      <span class="bgm-meta"><strong>また明日</strong><em>MATSU</em></span>
+    </div>
+    <div class="bgm-row">
+      <button class="bgm-play" id="bgmPlay" type="button" aria-label="播放背景音乐" aria-pressed="false"><span class="bgm-ico" aria-hidden="true"></span></button>
+      <div class="bgm-seek">
+        <input class="bgm-bar" id="bgmBar" type="range" min="0" max="1000" step="1" value="0" aria-label="播放进度">
+        <span class="bgm-time"><span id="bgmNow">0:00</span> / <span id="bgmDur">--:--</span></span>
+      </div>
+    </div>
+    <div class="bgm-foot">
+      <button class="bgm-loop is-on" id="bgmLoop" type="button" aria-pressed="true" title="循环播放"><span aria-hidden="true">&#8635;</span> 循环</button>
+      <span class="bgm-vol-label">音量</span>
+      <input class="bgm-volume" id="bgmVol" type="range" min="0" max="100" step="1" value="30" aria-label="背景音乐音量">
+      <span class="bgm-vol-num" id="bgmVolNum">30</span>
+    </div>
   </div>
 </aside>
+<!-- src 由 app.js 在运行时指定：交给 Vite 处理会被搬进 assets/ 并吃一年不可变缓存 -->
+<audio id="bgmAudio" loop preload="none"></audio>
 
 <!-- 首次访问须知：由 app.js 按 localStorage 决定弹不弹。
      文案与组织主页 .github/profile/README.md 的引用块保持一致；
