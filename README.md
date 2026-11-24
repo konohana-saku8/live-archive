@@ -10,7 +10,8 @@
 
 ```
 AGENT.md                 整条链路的总说明（库表结构、切场规则、坑、备份与重建），优先读这份
-config.toml              数据源与发布配置（db 路径、切场阈值、时间窗）
+config.toml              本机配置（db 路径、切场阈值、时间窗），**不入库**
+config.example.toml      配置模板：复制成 config.toml 后按机器修改
 package.json             Vite 构建（唯一的 npm 依赖就是 vite 本身）
 vite.config.mjs          dev server 与 dist 构建配置；构建前自动跑 tools/gen_data.py
 site/
@@ -22,11 +23,11 @@ site/
     diary.json           直播日记（人工整理的每场摘要，按 date 挂到场次）
     quotes.json          人工整理的对话摘录（按 date + 时间戳挂到对应场次）
     sessions/*.json       每场直播一份：话题带、目录、逐条记录
-    subs/*.json           插件用的双语字幕轨（插件按固定路径取，见下表）
+    subs/*.json           双语字幕轨（按场次分文件，随站点发布）
 tools/
   common.py              配置、数据库读取、会话切分、话题分类
   export.py              db → site/data/sessions/*.json
-  gen_data.py            site/data → .build/：data.js、subs、插件 zip、版本号
+  gen_data.py            site/data → .build/：data.js、subs、版本号
   build.py               调 Vite 构建 dist/（等价于 npm run build）
   publish.py             导出 → 校验 → git commit → push
 .build/                  构建前的数据暂存，不入库（gen_data.py 生成）
@@ -58,8 +59,15 @@ python tools/publish.py                    # 导出 → 构建校验 → commit�
 python tools/publish.py --push             # 同上，但提交后推送
 ```
 
-首次使用或依赖变动后跑一次 `npm install`。`vite.config.mjs` 在 dev/build 启动时会自动调用
-`tools/gen_data.py` 产出 `data.js`、字幕轨与插件包，所以不需要单独执行；数据改动也会触发整页刷新。
+首次使用或依赖变动后跑一次 `npm install`；配置先复制模板：
+
+```bat
+copy config.example.toml config.toml
+```
+
+`config.toml` 只留在本机（已在 `.gitignore`），CI 没有它时使用内置默认值。
+`vite.config.mjs` 在 dev/build 启动时会自动调用 `tools/gen_data.py` 产出 `data.js` 与字幕轨，
+所以不需要单独执行；数据改动也会触发整页刷新。
 
 `publish.py` 的判断顺序：最后一条记录静默不足 `quiet_min`（默认 10 分钟）就认为还在直播，直接退出；
 导出后数据无变化则不提交；**默认不推送**——本地提交后由人工 review，确认后用 `--push` 推送

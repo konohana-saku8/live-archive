@@ -7,7 +7,7 @@
 
 产物（写入 site/brand/）::
 
-    scene-spring.webp   场景图压到 1600px 宽，作为全站氛围背景
+    scene-girls.webp    场景图压到 1024px 宽，作为全站氛围背景（叠了暗罩，不需要高分辨率）
     character-full.webp 立绘抠掉白底、裁到人物边界，带 alpha（立绘已下线，备用）
     home-night-far.webp 首页夜景的远景层，blur/亮度/饱和度预先烘进图，省掉运行时滤镜
 
@@ -20,7 +20,6 @@
 import sys
 from pathlib import Path
 
-import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,14 +29,18 @@ SENTINEL = (255, 0, 255)
 
 def prepare_scene(src: Path) -> Path:
     im = Image.open(src).convert("RGB")
-    if im.width > 1600:
-        im = im.resize((1600, round(im.height * 1600 / im.width)), Image.LANCZOS)
-    dst = OUT / "scene-spring.webp"
-    im.save(dst, "WEBP", quality=82, method=6)
+    # 背景层叠了 .amb-veil 的暗罩、运行时还有 filter，1024 宽足够；
+    # 再高只会增加首屏流量，肉眼几乎看不出差别。
+    if im.width > 1024:
+        im = im.resize((1024, round(im.height * 1024 / im.width)), Image.LANCZOS)
+    dst = OUT / "scene-girls.webp"
+    im.save(dst, "WEBP", quality=72, method=6)
     return dst
 
 
 def prepare_character(src: Path) -> Path:
+    import numpy as np
+
     im = Image.open(src).convert("RGB")
     w, h = im.size
 

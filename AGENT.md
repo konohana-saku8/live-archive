@@ -105,7 +105,8 @@ raw_json TEXT            -- 整条原始 payload
 ### 结构
 
 ```
-config.toml               ← 过期：指向旧 C# 库（见坑 1）
+config.toml               本机配置（db 路径、切场阈值、时间窗），不入库
+config.example.toml       配置模板：复制成 config.toml 后按机器修改
 publish.cmd               一键入口（导出+构建+本地提交）
 package.json              Vite 构建依赖（vite 本身）
 vite.config.mjs           dev server / dist 构建；启动时自动调 tools/gen_data.py
@@ -114,24 +115,21 @@ site/
   assets/app.js           ES module；前端 hash 路由：#/ #/diary #/quotes #/archive #/about
   assets/style.css
   brand/                 头像、favicon、氛围底图、首页夜景（--scene 切换）与预模糊远景
-  audio/                 背景音乐 mp3（gen_data.py 复制进 .build/public，preload=none）
   data/profile.json       主播名 / 标题 / 描述
   data/diary.json         直播日记（人工写，最新在最前）
   data/dynamics.json      B 站动态（export_dynamics.py 从 live-capture 导出，**禁止手改**）
   data/quotes.json        摘录（人工挑，按 date + t 挂场次）
   data/sessions/*.json    每场直播一份，脚本导出，**禁止手改**
-  data/subs/*.json        插件用的字幕轨（进 git；插件按固定路径取）
+  data/subs/*.json        双语字幕轨（进 git，随站点发布，按场次分文件）
 .build/                   构建前的数据暂存（gitignore，gen_data.py 生成）
 tools/
   common.py               配置、读库、切场、话题分类（TOPICS 关键词表）
   export.py               db → site/data/sessions/
   export_dynamics.py      live-capture 的 dynamics 表 → site/data/dynamics.json（默认 ssh 只读手机库）
-  gen_data.py             site/data → .build/：data.js、版本哈希、subs、插件 zip、静态资源
+  gen_data.py             site/data → .build/：data.js、版本哈希、subs、静态资源
   export_subs.py          db → site/data/subs/（gen_data.py 调用，再复制进 .build/public/subs）
-  pack_ext.py             extension/ → .build/public/download/*.zip（gen_data.py 调用）
   build.py                调 Vite 构建 dist/（等价于 npm run build）
   publish.py              导出 → 构建 → commit（默认不 push）
-extension/                浏览器插件：看录播时叠双语字幕（见坑 12 与 extension/README.md）
 dist/                     构建产物，不入库，CI 重新生成
 .state/                   日志、截图、临时 dump、config_data.toml（gitignore）
 .data/                    枢纽数据库（**未入 git**，见坑 2）
@@ -166,7 +164,7 @@ publish.cmd --dry-run
 `publish.py` 的判断顺序：最后一条记录静默 < `quiet_min`（10 分钟）→ 认为还在播，退出；导出无变化 → 不提交；**默认不推送**。
 
 数据产出由 `vite.config.mjs` 在 dev/build 启动时调用 `tools/gen_data.py` 完成（`data.js`、版本哈希、
-subs、插件 zip 都落在 `.build/public/`），Vite 只负责打包与发布，产物路径与版本号规则和旧版一致。
+subs 都落在 `.build/public/`），Vite 只负责打包与发布，产物路径与版本号规则和旧版一致。
 
 CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推送后自动
 `npm ci && npm run build` + deploy，约 40 秒生效。CI 无数据库，沿用已入库的 `site/data/subs`。
@@ -176,7 +174,8 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 产物是纯静态 + hash 路由 + 全相对路径（`base:'./'`），挂在 `pages.dev` 根路径上不用改任何路径。
 
 - **构建配置**：Build command `npm ci && npm run build`，输出目录 `dist`，框架预设选 None。
-  环境变量 `NODE_VERSION=22`、`PYTHON_VERSION=3.12`（仓库根已放 `.node-version` / `runtime.txt` 兜底）。
+  环境变量 `NODE_VERSION=22`、`PYTHON_VERSION=3.12`（仓库根已放 `.node-version` / `runtime.txt` 兜底；
+  **`runtime.txt` 里只能写 `3.12`**，Cloudflare 不认 Heroku 的 `python-3.12` 写法）。
   Vite 构建前会调 `tools/gen_data.py`，所以构建机必须有 Python 3.11+，这点和 GitHub Actions 一致。
 - **必须关 Rocket Loader**（Speed → Optimization）：它会把 `type="module"` 脚本改为异步加载，
   影响首屏渲染与 `navigator.serviceWorker.register('sw.js')` 的时机，症状是偶发白屏或 PWA 装不上。
@@ -187,12 +186,12 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
   - `/assets/*` → `max-age=31536000, immutable`，因为三个文件 URL 上都带 `?v=<hash>`；
   - `/manifest.webmanifest` → 显式 `application/manifest+json`，避免 Cloudflare 按 octet-stream 返回导致 PWA 不装。
   **注意规则会合并**：同一路径命中多条时 `Cache-Control` 会被逗号拼起来，所以 `/*` 里只放安全头，缓存只写具体路径。
-- **体积**：Cloudflare 自动 Brotli，`data.js` 3.35 MB 线上约 1 MB；单文件上限 25 MB、单次部署 2 万文件，
-  当前 56 个文件 16 MB（最大是 `audio/mata-ashita.mp3` 6.86 MB），余量充足。
+- **体积**：Cloudflare 自动 Brotli；`data.js` 已降到 85 KB（只留索引层），摘录 / 日记正文 / 逐字稿按需加载。
+  单文件上限 25 MB、单次部署 2 万文件，当前 111 个文件 7.5 MB（最大是 `brand/avatar.png` 0.57 MB），余量充足。
 - **两种发法**：① 连 Git 仓库，push 自动构建（预览分支也给独立 URL）；② 本地构建后
   `npx wrangler pages deploy dist --project-name live-archive`，不依赖构建机的 Node/Python 版本。
 - **Service Worker**：`CACHE` 版本号改动要 +1；预缓存从 `index.html` 里读 `assets/*?v=` 的真实地址，
-  避免和无版本号的那份各下一遍（`data.js` 3 MB+ 会被重复下载）。
+  避免和无版本号的那份各下一遍。
 
 ### 切场规则（`common.py`）
 
@@ -275,9 +274,9 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 
 | 文件 | 用途 |
 |---|---|
-| `scene-spring.webp` | 非首页栏目的氛围底图（`.amb-scene`，压暗 + 视差）；关于页头图已下线（2026-11-15 用户指定，避免和背景重复） |
-| `home-night.webp` | 首页专属夜景，由 `body.is-home` 切换 `--scene`，左侧留白给文字 |
-| `home-night-far.webp` | 首页远景层（`.amb-far`），`blur(7px)` / `brightness(.82)` / `saturate(.85)` 已烘进图，约 9 KB |
+| `scene-girls.webp` | 非首页栏目的氛围底图（`.amb-scene`，压暗 + 视差），1024px 宽 / WebP q72，约 85 KB；关于页头图已下线（2026-11-15 用户指定，避免和背景重复） |
+| `home-night.webp` | 首页专属夜景，由 `body.is-home` 切换 `--scene`，左侧留白给文字；1280px 宽 / q72，约 17 KB |
+| `home-night-far.webp` | 首页远景层（`.amb-far`），`blur(7px)` / `brightness(.82)` / `saturate(.85)` 已烘进图，约 6 KB |
 
 **右下角立绘已下线**（2026-11-15 用户指定）：`character-full.webp` 连同 `.amb-char` 层、呼吸动画、`body.scrolled` 与 `--rot` 变量一并移除，站点不再发布这张图。`prepare_art.py` 仍保留白底立绘的处理能力备用，但产物不要放回 `site/brand/`；若要恢复立绘，白底必须按**边缘连通域**抠，不能按「接近白色」整体抠——衣服上的白花、眼白、皮肤高光也是浅色，会被一起吃掉。
 
@@ -335,11 +334,11 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 - **问答档案** `#/qa`：数据就是 `D.quotes` 里带 `sc` 字段的条目（当前 169 条，非 44——`gen_data.split_sc()` 会把旧格式首行拆出 sc）。`renderQA()` 支持按话题 `qaMode='tag'` / 按时间切换；`?q=<quote id>` 深链定位。观众昵称只用摘录里已有的写法，**不要额外暴露账号信息**。
 - **统一时间线** `#/timeline`：按日期把日记、动态、摘录、问答混排在一根竖轴上。注意**顶层 `D` 没有 dynamics**——动态在 `D.diary[].dyn` 里，从那里取。五种筛选写死在 `renderTimeline()` 的 `kinds` 表里；每条都带回到原页的链接。
 - **沉浸阅读**：`#zenView` 是运行时创建并挂到 `body` 上的浮层（不能在 `#app` 内，淡入动画的 transform 会破坏 fixed 定位），`route()` 开头统一 `closeZen()`。键盘左右/Esc、手机左右滑；当前筛选结果存在 `state.qList`，翻页不重新过滤。`zen-stage` 居中**必须用 `.zen-card{margin:auto}`，不能用 `align-items:center`**——后者在内容超高时把卡片顶部顶到负坐标、那段永远滚不到；浮层背景用不透明 `var(--bg)`，别用 rgba 透出底下页面。`showZen()` 每次把 `stage.scrollTop` 归零，避免新段从中间开始。
-- **金句卡片** `makeQuoteCard()`：纯 canvas 画竖版 PNG（720 宽，高度按行数算），底图 `brand/scene-spring.webp` 同源，`toBlob` + 对象 URL 下载。文案、配色都写死在函数里；改版式只需改这一处，不要引第三方库。
+- **金句卡片** `makeQuoteCard()`：纯 canvas 画竖版 PNG（720 宽，高度按行数算），底图 `brand/scene-girls.webp` 同源，`toBlob` + 对象 URL 下载。文案、配色都写死在函数里；改版式只需改这一处，不要引第三方库。
 - **本场高频词** `paintTranscript()`：对本场 `r.jp` 提 2–4 字汉字词与 3–8 字片假名词，过滤 `stopW` 后取频次前 14。点击跳到该词第一次出现的行（用 `jump(hit.t, true)` 的高亮，不另造机制）。它反映「这一场反复说什么」，与预设话题表是两套粒度。
 - **日语学习模式**：`state.learn` + `#learnMode` 开关，`renderList()` 不动 DOM 结构，靠 `.trlist.learn .tr .zh{display:none}` 隐藏译文；点 `.jp` 给该行加 `.show-zh` 展开。SC 块同属 `.tr`，自然生效。
 - **搜索语法**：`parseQuery()` 支持 `tag:` `date:` `sc:` `jp:` `zh:` 前缀，可混用。高亮词取 `ctx.text`（parseQuery 的字段），**不是 `ctx.term`**——`term` 是 `collect()` 的返回字段，写错会让 `markEsc()` 收到 undefined 并抛错。
-- **PWA**：`site/sw.js` + `site/manifest.webmanifest` 没有被 index.html 引用，靠 `gen_data.py::copy_static()` 手拷进 `.build/public/` 才会进 dist。manifest 由 `app.js` 末尾动态注入 `<link>`（避免 Vite 改写路径），SW 在 load 后同源注册。缓存名 `CACHE='live-archive-v1'`，**改 sw.js 内容时把版本号 +1**，否则旧缓存不会被清。SW 只在 HTTPS/localhost 生效；缓存失败不影响站点。
+- **PWA**：`site/sw.js` + `site/manifest.webmanifest` 没有被 index.html 引用，靠 `gen_data.py::copy_static()` 手拷进 `.build/public/` 才会进 dist。manifest 由 `app.js` 末尾动态注入 `<link>`（避免 Vite 改写路径），SW 在 load 后同源注册。缓存名 `CACHE='live-archive-v3'`，**改 sw.js 内容时把版本号 +1**，否则旧缓存不会被清。SW 只在 HTTPS/localhost 生效；缓存失败不影响站点。
 
 ---
 
@@ -562,23 +561,17 @@ time_window_keep = ["2026-11-02_1815"]
 
 自查：`python -c` 读 `dist/assets/data.js`，把 `diary` 的 `start/end/count` 和标题对一遍——两场同一天时数字应当不同。
 
-### 12. 录播字幕轨（extension/）的时间 0 是第一句翻译，不是开播整点（2026-11-11 新增）
+### 12. 录播字幕轨（subs/）的时间 0 是第一句翻译，不是开播整点（2026-11-11 新增）
 
-浏览器插件（看录播时叠双语字幕）的字幕数据由 `tools/export_subs.py` 生成，**直接读 `.data/translation_history.db` 全量**（12k+ 行 → 18 场），不经 `export.py` 的时段过滤——所以站点没收的白天场（11-06_0923 / 11-06_1134 / 11-07_1118）这里照样有字幕。
+字幕数据由 `tools/export_subs.py` 生成，**直接读 `.data/translation_history.db` 全量**（12k+ 行 → 18 场），不经 `export.py` 的时段过滤——所以站点没收的白天场（11-06_0923 / 11-06_1134 / 11-07_1118）这里照样有字幕。
 
 关键约定：
 
-- `dist/subs/<场次>.json` 里 `[起, 止, 中文, 日文]` 的秒数，**0 = 本场第一句话开口的时刻**（2026-11-11 晚修正；以前是第一句翻译入库的时刻）。录播视频开头差的那几十秒由插件里的「对时」偏移补，不要在数据端硬凑。
+- `dist/subs/<场次>.json` 里 `[起, 止, 中文, 日文]` 的秒数，**0 = 本场第一句话开口的时刻**（2026-11-11 晚修正；以前是第一句翻译入库的时刻）。如果下游要按视频时间轴对齐，偏移在消费端补，不要在数据端硬凑。
 - 场次 key 与 `site/data/sessions/` 文件名同一套规则（`2026-11-11_0904`），两边能对上；但同一个 key 下**两边的秒数轴不同**（站点版从 `HH:MM:00` 起算，字幕版从第一句起算），别混用。
-- 碎句合并（间隔 <1.6s、≤42 字）与 ASR 重述去重（后句是前句超集则替换）都在导出时做完，插件端只做二分查找。
-- 稿件绑定：`site/data/videos.json`（`{"BV...": "场次key"}`）或简介里写 `HBS:<场次key>`；插件另有按发布时间倒推的兜底。
-- 插件从 `https://konohana-saku8.github.io/live-archive/subs/index.json` 取数据，index 缓存 3 小时；数据随 `publish.cmd --push` 自动上线，没有独立的更新通道。
-- **时间戳锚点**（2026-11-11 晚，两轮修正后的最终结论）：db 里 `Timestamp` 是翻译**回来**的时刻，它锚在说话的**结束**上——说完到入库中位 0.75s（VAD 静音 + 翻译往返），而**开口**到入库中位 4.3s，差值正好是句子本身的时长。所以老数据拿 Timestamp 当字幕起点平均晚 4.3s，且长句比短句晚得更多，**常数对时救不回来**。修正：老场次（无 SpeechStart）按 `结束 − 0.75s − 估时长` 反推开口，估时长用日文字数 ÷ 5.88 字/秒（全库实测中位）；实测对 3690 句验证，偏离真实开口从中位 4.32s 降到 0.68s（ unbiased −0.09s）。统计与验证脚本在 `.state/anchor_stats.py`、`.state/anchor_gain.py`、`.state/dur_est.py`。LiveTranslate 新版直接写 `SpeechStart`/`Duration`/`LagMs` 三列（旧行 NULL），有精确值就逐句用；index/单场里的 `precise` 标记这场是哪种。插件对老场次**不再默认偏移**（修正已在导出端做掉），面板提示「时间为估算（误差约 0.7 秒）」。**别给老数据统一平移**——晚的量随句长变化，常数修正会被 0 点吸收。
-
-- **发布与下载**（2026-11-11 晚新增）：站点导航有「工具」页（`#/tools`，`renderTools()`），给访客直接下载插件。构建时 `pack_ext.build()` 把 `extension/` 打成 `dist/download/hibane-subs-<ver>.zip`（白名单收录，`test/` 不进包），版本号读 manifest；工具页展示的字幕统计与包体积来自 `meta.subs` / `meta.ext`（构建时注入 data.js），**前端不写死数字**。`hibane-subs-latest.zip` 是固定文件名的副本，外部说明可以写死链接。改插件记得同步 bump manifest 版本。
-
-本地验证插件用 `extension/test/preview.html`（模拟 B 站结构，走本地 `dist/`），构建前先用 headless Chrome 截图确认渲染，再提交。
-页面溢出检查用 `extension/test/probe.html`（同源 iframe 逐元素找超宽的，支持 `?w=420&p=%23/tools` 指定宽度与路由）——注意 headless 在 Windows 有最小窗宽，直接截图会裁掉右侧，别拿截图判断溢出。
+- 碎句合并（间隔 <1.6s、≤42 字）与 ASR 重述去重（后句是前句超集则替换）都在导出时做完，消费端只做二分查找。
+- 稿件绑定：`site/data/videos.json`（`{"BV...": "场次key"}`）或简介里写 `HBS:<场次key>`。
+- **时间戳锚点**（2026-11-11 晚，两轮修正后的最终结论）：db 里 `Timestamp` 是翻译**回来**的时刻，它锚在说话的**结束**上——说完到入库中位 0.75s（VAD 静音 + 翻译往返），而**开口**到入库中位 4.3s，差值正好是句子本身的时长。所以老数据拿 Timestamp 当字幕起点平均晚 4.3s，且长句比短句晚得更多，**常数对时救不回来**。修正：老场次（无 SpeechStart）按 `结束 − 0.75s − 估时长` 反推开口，估时长用日文字数 ÷ 5.88 字/秒（全库实测中位）；实测对 3690 句验证，偏离真实开口从中位 4.32s 降到 0.68s（ unbiased −0.09s）。统计与验证脚本在 `.state/anchor_stats.py`、`.state/anchor_gain.py`、`.state/dur_est.py`。LiveTranslate 新版直接写 `SpeechStart`/`Duration`/`LagMs` 三列（旧行 NULL），有精确值就逐句用；index/单场里的 `precise` 标记这场是哪种。字幕轨对老场次**不再默认偏移**（修正已在导出端做掉），下游按「时间为估算（误差约 0.7 秒）」提示即可。**别给老数据统一平移**——晚的量随句长变化，常数修正会被 0 点吸收。
 
 ---
 

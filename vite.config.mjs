@@ -6,7 +6,7 @@
 // 仓库里已入库的 site/data/subs。
 //
 // 产物形态必须和旧的 tools/build.py 保持一致：assets/app.js、assets/style.css、
-// assets/data.js、brand/、audio/、subs/、download/、.nojekyll，
+// assets/data.js、brand/、subs/、.nojekyll，
 // 版本号统一挂在 data / app / style 三个 URL 上。
 import { defineConfig } from 'vite'
 import { execFileSync } from 'node:child_process'

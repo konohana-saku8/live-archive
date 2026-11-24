@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """产出 Vite 构建需要的输入，全部落在 .build/ 下（不入库）。
 
-  .build/public/assets/data.js   site/data/ 内联成 window.DATA
-  .build/public/subs/*.json      插件用的双语字幕轨
-  .build/public/download/*.zip   插件安装包
+  .build/public/assets/data.js   site/data/ 的索引部分内联成 window.DATA
+  .build/public/records/*.json   逐字稿按场次分片，档案页 / 搜索按需取
+  .build/public/quotes.json      全量摘录，摘录页 / 问答 / 时间线 / 搜索按需取
+  .build/public/diary/*.json     每篇日记的正文，日记详情页按需取
+  .build/public/subs/*.json      双语字幕轨（按场次分文件，供外部工具取用）
   .build/public/brand/           站点图片（app.js 里有运行时拼出来的引用，整目录复制）
-  .build/public/audio/           背景音乐
   .build/manifest.json           版本号 + 页面模板要用的 profile
 
 由 vite.config.mjs 在 dev 启动和 build 前调用，也可以单独跑：
@@ -27,7 +28,6 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import export_subs
-import pack_ext
 
 ROOT = common.ROOT
 
@@ -125,10 +125,14 @@ def collect(site_dir):
 
     sess_out, recs_out = [], []
     for i, s in enumerate(sessions):
+        key = os.path.basename(s['_file'])[:-5]
         sess_out.append({
             'id': i,
             # 场次文件名（2026-11-11_0904）：日记详情页用它做路由，比递增 id 稳
-            'key': os.path.basename(s['_file'])[:-5],
+            'key': key,
+            # 逐字稿分片的文件名（records/<key>.json）。前端看一场只取这一片，
+            # 首屏的 data.js 里不再带任何逐字稿正文。
+            'chunk': key,
             'date': s['date'], 'dateLong': s['dateLong'], 'week': s['week'],
             'start': s['start'], 'end': s['end'], 'dur': s['dur'], 'count': s['count'],
             'topics': s['topics'], 'ribbon': s['ribbon'], 'segs': s['segs'],
@@ -212,6 +216,90 @@ def collect(site_dir):
 
 
 
+def write_chunks(public_dir, sess_out, recs_out):
+    """逐字稿按场次拆成 records/<key>.json，返回 (总字节数, 内容指纹)。
+
+    档案页看一场只取一片；全站搜索与主题索引才按需把全部片拉下来。这样
+    data.js 不再随场次一起膨胀，新增一场也只多一个新文件，历史分片的内容
+    没变就不必重下。
+
+    片内每条写成 [t, jp, zh, tp] 而非对象：s 字段在单场文件里是恒定的，
+    键名也是每行重复一遍，去掉这些后比 data.js 里原来的写法小四分之一左右。
+
+    指纹覆盖全部片的内容，前端拿它给分片 URL 打 ?v=，校正后不会吃旧缓存。
+    """
+    rec_dir = os.path.join(public_dir, 'records')
+    if os.path.isdir(rec_dir):
+        shutil.rmtree(rec_dir)   # 场次可能被删掉，旧分片不能留在产物里
+    os.makedirs(rec_dir, exist_ok=True)
+
+    by_sess = {}
+    for r in recs_out:
+        by_sess.setdefault(r['s'], []).append([r['t'], r['jp'], r['zh'], r['tp']])
+
+    h, total = hashlib.sha256(), 0
+    for s in sess_out:
+        txt = json.dumps(by_sess.get(s['id'], []), ensure_ascii=False, separators=(',', ':'))
+        with open(os.path.join(rec_dir, s['chunk'] + '.json'), 'w',
+                  encoding='utf-8', newline='\n') as f:
+            f.write(txt)
+        blob = txt.encode('utf-8')
+        h.update(blob)
+        total += len(blob)
+    return total, h.hexdigest()[:10]
+
+
+def _write_json(path, obj):
+    txt = json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(txt)
+    return txt
+
+
+def write_side(public_dir, q_out, diary_out):
+    """摘录与日记正文也从 data.js 拆出来，返回 (摘录指纹, 日记正文指纹)。
+
+    首页真正要用的只有最近一场的三条摘录和一句随机引文，没必要为了它把
+    几百段摘录和所有日记正文一起下载。需要全文的页面（摘录 / 问答 / 时间线 /
+    主题详情 / 日记详情 / 搜索）再按需取：
+
+      quotes.json          全部摘录
+      diary/<key>.json     单篇日记的正文与具名观众
+
+    指纹只覆盖各自的文件内容：新增一场时历史文件不变，URL 也就不变。
+    """
+    q_txt = _write_json(os.path.join(public_dir, 'quotes.json'), q_out)
+    q_ver = hashlib.sha256(q_txt.encode('utf-8')).hexdigest()[:10]
+
+    d_dir = os.path.join(public_dir, 'diary')
+    if os.path.isdir(d_dir):
+        shutil.rmtree(d_dir)   # 日记可能被删掉，旧正文不能留在产物里
+    os.makedirs(d_dir, exist_ok=True)
+
+    h = hashlib.sha256()
+    for d in diary_out:
+        txt = _write_json(os.path.join(d_dir, d['key'] + '.json'),
+                          {'body': d['body'], 'names': d.get('names') or []})
+        h.update(txt.encode('utf-8'))
+    return q_ver, h.hexdigest()[:10]
+
+
+def home_quotes(sess_out, q_out, limit=24):
+    """首页只带固定条数的摘录：最近一场三条 + 一份横跨存档的随机池。
+
+    随机池按时间均匀取样，保证「随机一句」不会总落在最近几场；条数固定，
+    首页体积就不再随摘录总数增长。
+    """
+    if not q_out:
+        return {'latest': [], 'pool': []}
+    last_id = sess_out[-1]['id']
+    latest = [q for q in q_out if q['s'] == last_id][:3]
+    # 与前端原来的取句规则一致：长度适中的一句才适合放在首屏大引言里
+    pool = [q for q in q_out if 55 <= len(re.sub(r'\s', '', q['zh'])) <= 120] or q_out
+    step = max(1, len(pool) // limit)
+    return {'latest': latest, 'pool': pool[::step][:limit]}
+
+
 def data_js(data):
     return 'window.DATA = ' + json.dumps(data, ensure_ascii=False, separators=(',', ':')) + ';\n'
 
@@ -237,14 +325,12 @@ def content_version(data, site_dir):
 
 
 def copy_static(site_dir, public_dir):
-    """brand/ 与 audio/ 原样复制：app.js 运行时会拼 brand/xxx 的路径，不能只靠打包器。
+    """brand/ 原样复制：app.js 运行时会拼 brand/xxx 的路径，不能只靠打包器。
     sw.js / manifest.webmanifest 也没有被 index.html 引用（动态注册），同样要手动带过去。
     _headers 是 Cloudflare Pages 的缓存与 MIME 规则，必须落在产物根目录才会生效。"""
-    for name in ('brand', 'audio'):
-        src = os.path.join(site_dir, name)
-        if not os.path.isdir(src):
-            continue
-        dst = os.path.join(public_dir, name)
+    src = os.path.join(site_dir, 'brand')
+    if os.path.isdir(src):
+        dst = os.path.join(public_dir, 'brand')
         os.makedirs(dst, exist_ok=True)
         shutil.copytree(src, dst, dirs_exist_ok=True)
     for name in ('sw.js', 'manifest.webmanifest', '_headers'):
@@ -269,7 +355,7 @@ def main():
 
     profile, sess_out, recs_out, q_out, diary_out, dynamics_out, skipped, skipped_diary = collect(site_dir)
 
-    # 工具页要摆出来的两块事实：字幕轨有多大、插件包多大。
+    # 字幕轨统计：字幕文件随站点发布，data.js 里留一份概况供外部工具展示。
     subs_meta = {}
     try:
         with open(os.path.join(site_dir, 'data', 'subs', 'index.json'), encoding='utf-8') as f:
@@ -281,15 +367,45 @@ def main():
             'latest': (si['sessions'][-1]['key'] if si.get('sessions') else ''),
         }
     except Exception as exc:
-        print('!! 读不到字幕索引（%s），工具页不显示字幕统计' % exc, file=sys.stderr)
+        print('!! 读不到字幕索引（%s），data.js 不带字幕概况' % exc, file=sys.stderr)
 
-    ext_meta, ext_blob, ext_name = {}, None, ''
-    try:
-        ext_name, ext_blob, ext_ver, ext_files = pack_ext.build(os.path.join(ROOT, 'extension'))
-        ext_meta = {'file': 'download/' + ext_name, 'latest': 'download/hibane-subs-latest.zip',
-                    'ver': ext_ver, 'size': len(ext_blob), 'files': ext_files}
-    except Exception as exc:
-        print('!! 插件打包失败（%s），工具页不显示下载按钮' % exc, file=sys.stderr)
+    # 逐字稿先落成按场次的分片，指纹要写进 meta，所以得赶在拼 data 之前
+    chunk_bytes, rec_ver = write_chunks(public_dir, sess_out, recs_out)
+
+    # 摘录与日记正文同样按需取；首页要用的几句单独挑进 data.js
+    quotes_ver, diary_ver = write_side(public_dir, q_out, diary_out)
+
+    # 场次 / 日记条目上的摘录条数在构建期算好：列表、日历和详情页头部都要显示它，
+    # 不能为了一个数字把 quotes.json 拉下来。
+    q_by_s = {}
+    for q in q_out:
+        q_by_s[q['s']] = q_by_s.get(q['s'], 0) + 1
+    for s in sess_out:
+        s['qn'] = q_by_s.get(s['id'], 0)
+
+    # data.js 里的日记只留索引（标题 / 摘要 / 动态），正文另外成文件
+    diary_index = []
+    for d in diary_out:
+        item = {k: v for k, v in d.items() if k not in ('body', 'names')}
+        item['n'] = len(d['body'])
+        item['qn'] = q_by_s.get(d['s'], 0)
+        diary_index.append(item)
+
+    # 主题的命中计数在构建期算好。以前是前端拿全量逐字稿现算，分片之后那样做
+    # 会让「打开主题列表」变成一次全库拉取；口径与前端过滤保持一致。
+    themes_raw = []
+    themes_path = os.path.join(site_dir, 'data', 'themes.json')
+    if os.path.exists(themes_path):
+        with open(themes_path, encoding='utf-8') as f:
+            themes_raw = json.load(f)
+    themes_out = []
+    for th in themes_raw:
+        kw = th.get('kw') or []
+        qn = sum(1 for q in q_out
+                 if any(w in (q['jp'] + ' ' + q['zh'] + ' ' + q.get('note', '')) for w in kw))
+        rn = sum(1 for r in recs_out
+                 if any(w in (r['jp'] + ' ' + (r['zh'] or '')) for w in kw))
+        themes_out.append(dict(th, quoteCount=qn, recCount=rn))
 
     data = {
         'meta': {
@@ -307,15 +423,22 @@ def main():
             'quoteCount': len(q_out),
             'diaryCount': len(diary_out),
             'dynamicCount': len(dynamics_out),
-            # 工具页的数据：字幕轨概况 + 插件包（版本/体积/下载路径）
+            # 逐字稿分片的内容指纹：前端拿它给 records/*.json 打 ?v=
+            'recVer': rec_ver,
+            # 摘录与日记正文各自的内容指纹：分开取文件，也就能分开失效
+            'quotesVer': quotes_ver,
+            'diaryVer': diary_ver,
+            # 字幕轨概况（场次数 / 块数 / 更新时间 / 最新场次）
             'subs': subs_meta,
-            'ext': ext_meta,
         },
         'topics': [[common.TOPIC_NAMES[i], common.TOPIC_COLORS[i]] for i in range(len(common.TOPIC_NAMES))],
+        # 主题索引：名称、配色、关键词与命中计数，前端的主题页直接读它
+        'themes': themes_out,
         'sessions': sess_out,
-        'records': recs_out,
-        'quotes': q_out,
-        'diary': diary_out,
+        # 日记索引：列表与时间线只读这里，正文在 diary/<key>.json
+        'diary': diary_index,
+        # 首页专用的小份摘录：最近一场三条 + 随机引文池（条数固定，不随摘录总数涨）
+        'home': home_quotes(sess_out, q_out),
         # 动态不再单独成页，已经挂在各自那篇日记的 dyn 字段里（meta.dynamicCount 仍给总数）
     }
 
@@ -331,8 +454,6 @@ def main():
     except Exception as exc:  # 字幕挂了也不该拦着站点发布
         print('!! 字幕轨导出失败（%s），本站点照常发布' % exc, file=sys.stderr)
         n_subs, n_blocks, sub_bytes = 0, 0, 0
-    if ext_blob:
-        pack_ext.write(public_dir, ext_name, ext_blob)
 
     manifest = {
         'version': ver,
@@ -350,10 +471,14 @@ def main():
     print('data: %d 场 / %d 条 / %d 段摘录 / %d 篇日记 · data.js %d KB · v=%s'
           % (len(sess_out), len(recs_out), len(q_out), len(diary_out),
              len(js.encode('utf-8')) // 1024, ver))
+    print('records: %d 片 / 共 %d KB · 指纹 %s' % (len(sess_out), chunk_bytes // 1024, rec_ver))
+    print('quotes: %d KB · 指纹 %s · diary 正文 %d 篇 / %d KB · 指纹 %s'
+          % (os.path.getsize(os.path.join(public_dir, 'quotes.json')) // 1024, quotes_ver,
+             len(diary_out),
+             sum(os.path.getsize(os.path.join(public_dir, 'diary', f))
+                 for f in os.listdir(os.path.join(public_dir, 'diary'))) // 1024,
+             diary_ver))
     print('subs: %d 场字幕 / %d 块 / %d KB' % (n_subs, n_blocks, sub_bytes // 1024))
-    if ext_meta:
-        print('ext: v%s / %d 个文件 / %d KB → %s'
-              % (ext_meta['ver'], ext_meta['files'], ext_meta['size'] // 1024, ext_meta['file']))
     if skipped:
         print('!! 找不到对应场次的摘录:', ', '.join(skipped))
     if skipped_diary:

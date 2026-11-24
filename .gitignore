@@ -11,8 +11,8 @@ __pycache__/
 *.pyc
 # 翻译数据库：个人数据，不进仓库
 .data/
-# 插件本地测试用的视频（体积大，随时可用 ffmpeg 重新生成）
-extension/test/testsrc.mp4
+# 本机配置（模板见 config.example.toml）
+config.toml
 # 系统文件
 .DS_Store
 Thumbs.db

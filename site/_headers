@@ -2,8 +2,9 @@
 # 两条注意：
 #   1. 同一路径命中多条规则时 Cache-Control 会被逗号拼起来，所以 /* 只放安全头、
 #      不放 Cache-Control，缓存只写在具体路径上。
-#   2. /assets/* 只有 app.js / style.css / data.js，URL 上都带 ?v=<hash>（vite.config.mjs
-#      的 closeBundle 注入），内容变了 URL 就变，可以放心 immutable。
+#   2. /assets/* 与按需取的 records/ quotes.json diary/ 的 URL 上都带 ?v=<hash>：
+#      assets 由 vite.config.mjs 的 closeBundle 注入内容哈希，其余用 data.js 里的
+#      meta.recVer / quotesVer / diaryVer 指纹。内容变了地址就变，可以放心 immutable。
 
 /*
   X-Content-Type-Options: nosniff
@@ -30,17 +31,23 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# 逐字稿分片：一场一个文件，?v=<recVer> 是全部逐字稿的内容指纹，
+# 只有重跑校正才会变——变了也只是这批文件换地址，历史场次照旧命中缓存。
+/records/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 全量摘录：一个文件，?v=<quotesVer>；摘录没变就不换地址
+/quotes.json
+  Cache-Control: public, max-age=31536000, immutable
+
+# 日记正文：一篇一个文件，?v=<diaryVer>
+/diary/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # 字幕按场次出文件：新增不影响旧文件，但重跑导出会改内容，给 10 分钟
 /subs/*
   Cache-Control: public, max-age=600
 
-# 站点图片与背景音乐，几乎不换
+# 站点图片，几乎不换
 /brand/*
   Cache-Control: public, max-age=604800
-
-/audio/*
-  Cache-Control: public, max-age=604800
-
-# 插件安装包，跟着版本走
-/download/*
-  Cache-Control: public, max-age=3600

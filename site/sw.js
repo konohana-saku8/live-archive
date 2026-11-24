@@ -1,15 +1,15 @@
 /* 离线缓存：首次打开后把页面骨架、样式、脚本、数据和场景图存下来，
    之后断网也能翻已缓存的内容。改动本文件时把 CACHE 的版本号 +1，
    旧缓存会在 activate 阶段清掉。 */
-var CACHE = 'live-archive-v2';
+var CACHE = 'live-archive-v3';
 var SCOPE = self.registration.scope;
 
 // 固定路径的静态资源；assets/ 下的三个文件 URL 上带 ?v=<hash>，构建后才知道，
-// 所以下面从 index.html 里现读，避免和无版本号的那份各下一遍（data.js 有 3MB+）。
+// 所以下面从 index.html 里现读，避免和无版本号的那份各下一遍。
 var PRECACHE = [
   SCOPE,
   SCOPE + 'index.html',
-  SCOPE + 'brand/scene-spring.webp',
+  SCOPE + 'brand/scene-girls.webp',
   SCOPE + 'brand/home-night.webp',
   SCOPE + 'manifest.webmanifest'
 ];
@@ -37,7 +37,7 @@ self.addEventListener('install', function (e) {
   e.waitUntil(
     collect().then(function (urls) {
       return caches.open(CACHE).then(function (c) {
-        // 单个资源失败不拖累整体：比如本地预览时还没有 audio/ 目录
+        // 单个资源失败不拖累整体：本地预览时也可能暂时缺图
         return Promise.all(urls.map(function (u) {
           return c.add(u).catch(function () {});
         }));

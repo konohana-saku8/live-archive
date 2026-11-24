@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-"""把翻译数据库导出成浏览器插件用的双语字幕轨。
+"""把翻译数据库导出成按场次分文件的双语字幕轨。
 
   python tools/export_subs.py          # 单独导一次（dist/ 必须已存在）
   （日常不用单独跑：build.py 会在构建末尾自动调用 emit_from_db()）
 
 数据直接读 translation_history.db，也就是 LiveTranslate 当时逐句翻出来的那张表：
 每一行就是"日文原文 + 中文译文 + 时间戳"。这里把行按直播场次切开，把碎句按停顿并成
-字幕块，写进 dist/subs/，随 GitHub Pages 一起发出去，插件从线上直接取。
+字幕块，写进 dist/subs/，随站点一起发出去，供下游工具按固定路径取用。
 
 比站点多出的意义：站点只收 23:30-01:30 开播的场次（白天场要手工加白名单），
 而字幕轨按数据库全量切，白天场照样有字幕。
 
-  site/data/subs/index.json      场次目录 + 稿件映射（插件启动只拉这一个）
+  site/data/subs/index.json      场次目录 + 稿件映射（下游启动只拉这一个）
   site/data/subs/<场次>.json     单场字幕块 [[起, 止, 中文, 日文], ...]
 
 落在 site/data/ 而不是直接写 dist/，是因为 dist/ 不入库、CI 也拿不到数据库：
@@ -27,7 +27,7 @@
   否则字幕永远慢半句，而且长句比短句慢得更多——常数对时救不回来。
 
 录播视频的 0:00 通常也不等于开播时刻（OBS 提前开录、投稿从黑屏切起），差多少由
-插件里的偏移量补，这里不做假设。
+下游在自己的时间轴上补，这里不做假设。
 """
 import json
 import os
@@ -370,7 +370,7 @@ def emit(sessions, out_dir, site_dir, stamp='', timing=None):
             'start': st.strftime('%H:%M'),
             'end': en.strftime('%H:%M'),
             'dur': max(1, int((en - st).total_seconds() // 60) + 1),
-            # 开播时刻的 unix 秒：插件拿稿件发布时间往上贴，不用解析字符串
+            # 开播时刻的 unix 秒：下游拿稿件发布时间往上贴，不用解析字符串
             'at': int(st.timestamp()),
             'blocks': len(blocks),
             'file': s['key'] + '.json',
@@ -383,7 +383,7 @@ def emit(sessions, out_dir, site_dir, stamp='', timing=None):
     meta = {
         'v': 1,
         'updated': stamp or datetime.now(TZ).strftime('%Y.%m.%d %H:%M'),
-        # 插件的备用镜像 / 相对取数都以此为根
+        # 下游按这个根址拼相对路径；GitHub Pages 与 Cloudflare 两份部署内容一致
         'site': 'https://konohana-saku8.github.io/live-archive/',
         'count': len(index),
         'blocks': total_blocks,
