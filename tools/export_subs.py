@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import asr_fixes
 import time_fixes
+import overrides
 
 TZ = timezone(timedelta(hours=8))
 
@@ -335,16 +336,30 @@ def emit(sessions, out_dir, site_dir, stamp='', timing=None):
     timing = timing or {}
 
     diary = load_diary(site_dir)
+    all_ov = overrides.load()
     index, total_blocks, total_bytes = [], 0, 0
     n_precise = 0
     for s in sessions:
-        origin = _origin(s['records'], int(s['start'].timestamp()), timing)
-        blocks = _blocks(s['records'], origin, timing)
+        # 这一场是不是带精确时间戳（新版程序录的才有）；必须在套覆盖之前判断，
+        # timing 是按（原始 ts, 原始日文）建的索引
+        precise = any((int(ts), jp) in timing for ts, jp, _zh in s['records'])
+        ov = all_ov.get(s['key'])
+        recs = overrides.apply_db(
+            s['records'], ov,
+            lambda ts: datetime.fromtimestamp(ts, TZ).strftime('%H:%M:%S'))
+        # timing 的键是（原始 ts, 原始日文）。改过文本的行要补一条别名，
+        # 否则这一句会丢掉「开口时刻 + 时长」，退回估算，字幕又慢半句。
+        tmap = timing
+        if ov:
+            tmap = dict(timing)
+            for (ts, jp0, _z0), (_t, jp1, _z1) in zip(s['records'], recs):
+                if jp0 != jp1 and (int(ts), jp0) in timing:
+                    tmap.setdefault((int(ts), jp1), timing[(int(ts), jp0)])
+        origin = _origin(recs, int(s['start'].timestamp()), tmap)
+        blocks = _blocks(recs, origin, tmap)
         if not blocks:
             continue
 
-        # 这一场是不是带精确时间戳（新版程序录的才有）
-        precise = any((int(ts), jp) in timing for ts, jp, _zh in s['records'])
         if precise:
             n_precise += 1
 

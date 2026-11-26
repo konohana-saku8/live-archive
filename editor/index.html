@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>火羽直播档案 · 编辑器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">火羽直播档案 <span>编辑器</span></div>
+  <div class="top-meta" id="topMeta">加载中…</div>
+  <div class="top-actions">
+    <button id="tab-quote" class="on">摘录</button>
+    <button id="tab-lib">摘录库</button>
+    <button id="tab-fix">全局修正</button>
+    <button id="tab-tag">tag 管理</button>
+    <button id="btn-rebuild" class="primary">重建站点</button>
+  </div>
+</header>
+
+<main id="view-quote">
+  <aside class="col side">
+    <section class="pane" id="pane-sess">
+      <div class="pane-head" data-pane="sess">
+        <span class="pcv"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 3.6 10.6 8l-4.4 4.4"/></svg></span>
+        <span class="ptitle">场次</span>
+        <span class="pmeta" id="sessionCount"></span>
+        <span class="tools">
+          <button id="sess-expand" class="iconbtn" title="全部展开" aria-label="全部展开">
+            <svg viewBox="0 0 16 16"><path d="M4 5.2 8 9l4-3.8"/><path d="M4 9.6 8 13.4l4-3.8"/></svg>
+          </button>
+          <button id="sess-collapse" class="iconbtn" title="全部收起" aria-label="全部收起">
+            <svg viewBox="0 0 16 16"><path d="M4 10.8 8 7l4 3.8"/><path d="M4 6.4 8 2.6l4 3.8"/></svg>
+          </button>
+        </span>
+      </div>
+      <div id="sessionList" class="list"></div>
+    </section>
+  </aside>
+  <div class="rz" data-rz="side" title="拖动调整左栏宽度，双击复原"></div>
+  <section class="col transcript">
+    <div class="col-head">
+      <span id="transTitle">选一场直播</span>
+      <span class="tools">
+        <button id="btn-find" class="iconbtn" title="在逐字稿中搜索（Ctrl+F）" aria-label="搜索逐字稿">
+          <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3 14 14"/></svg>
+        </button>
+        <button id="btn-copy" title="先在逐字稿里勾选要复制的行" disabled>复制选中</button>
+        <button id="sel-all">全选</button><button id="sel-none">清空</button>
+        <button id="sel-existing">载入已有勾选</button>
+        <button id="btn-ctx" class="primary">上下文 SC / 弹幕</button>
+      </span>
+    </div>
+    <div id="findBar" class="findbar" hidden>
+      <span class="fico"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3 14 14"/></svg></span>
+      <input id="findInput" placeholder="在逐字稿中搜索：原文 / 译文" spellcheck="false" autocomplete="off">
+      <span id="findStat" class="fstat"></span>
+      <button id="findCase" class="tg" title="区分大小写（Aa）">Aa</button>
+      <button id="findRegex" class="tg" title="正则表达式（.*）">.*</button>
+      <button id="findPrev" class="iconbtn" title="上一个匹配（Shift+Enter）" aria-label="上一个">
+        <svg viewBox="0 0 16 16"><path d="M8 12.4V4"/><path d="M4.2 7.6 8 3.8l3.8 3.8"/></svg>
+      </button>
+      <button id="findNext" class="iconbtn" title="下一个匹配（Enter）" aria-label="下一个">
+        <svg viewBox="0 0 16 16"><path d="M8 3.6V12"/><path d="M4.2 8.4 8 12.2l3.8-3.8"/></svg>
+      </button>
+      <button id="findClose" class="iconbtn" title="关闭（Esc）" aria-label="关闭搜索">
+        <svg viewBox="0 0 16 16"><path d="M4.6 4.6l6.8 6.8"/><path d="M11.4 4.6l-6.8 6.8"/></svg>
+      </button>
+    </div>
+    <div id="recList" class="list recs"></div>
+  </section>
+  <div class="rz" data-rz="editor" title="拖动调整编辑栏宽度，双击复原"></div>
+  <aside class="col editor">
+    <section class="pane" id="pane-quote">
+      <div class="pane-head" data-pane="quote">
+        <span class="pcv"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 3.6 10.6 8l-4.4 4.4"/></svg></span>
+        <span class="ptitle">本场摘录</span>
+        <span class="pmeta" id="qCount"></span>
+        <span class="tools">
+          <button id="q-new" class="iconbtn" title="新建摘录" aria-label="新建摘录">
+            <svg viewBox="0 0 16 16"><path d="M8 3.4v9.2"/><path d="M3.4 8h9.2"/></svg>
+          </button>
+        </span>
+      </div>
+      <div id="qList" class="qlist"></div>
+    </section>
+
+    <div class="rz rz-h" id="qRz" title="拖动调整摘录面板高度，双击复原"></div>
+
+    <div class="col-head">编辑 <span id="editStatus"></span></div>
+
+    <div class="form">
+      <label>概括标题 <span class="hint">留空则自动提炼</span></label>
+      <input id="f-title" placeholder="一句简短概括">
+
+      <label>tag <span class="hint">可多选，逗号分隔或点选</span></label>
+      <input id="f-tags" placeholder="科普, 人生">
+      <div id="tagPicks" class="picks"></div>
+
+      <label>引用（可选） <span class="hint">在右侧抽屉点一条 SC / 弹幕可自动填入</span></label>
+      <div id="refKinds" class="refkinds">
+        <button data-k="sc" class="on" title="引用一条 SC">SC</button>
+        <button data-k="dm" title="引用一条弹幕">弹幕</button>
+      </div>
+      <input id="f-scname" class="scname" placeholder="发送者">
+      <textarea id="f-sctext" class="sctext" rows="2" placeholder="原文，可多行；框会随内容长高"></textarea>
+
+      <label>校勘 note</label>
+      <textarea id="f-note" rows="3" placeholder="只写给以后的自己看：依据、出处、为什么这么校"></textarea>
+
+      <div class="preview">
+        <div class="prev-head">选段预览 <span id="selInfo">未勾选</span></div>
+        <div id="prevBody" class="prev-body">在中间勾选逐字稿行</div>
+      </div>
+
+      <div class="form-actions">
+        <button id="btn-save" class="primary">保存摘录</button>
+        <button id="btn-new">新建一条</button>
+        <button id="btn-delete" class="danger" hidden>删除这条</button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<main id="view-lib" hidden>
+  <section class="wide">
+    <div class="col-head">全部摘录 <span id="libCount"></span>
+      <input id="libSearch" class="libsearch" placeholder="搜标题 / 正文 / tag"></div>
+    <div id="libList" class="liblist"></div>
+  </section>
+</main>
+
+<main id="view-fix" hidden>
+  <section class="wide">
+    <div class="srbar">
+      <div class="srfield">
+        <span class="srico"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3 14 14"/></svg></span>
+        <input id="sr-q" placeholder="全库搜索逐字稿原文 / 译文" spellcheck="false" autocomplete="off">
+        <span class="srtg">
+          <button id="sr-case" class="tg" title="区分大小写（Aa）">Aa</button>
+          <button id="sr-regex" class="tg" title="正则表达式（.*）">.*</button>
+        </span>
+      </div>
+      <div class="srfield">
+        <span class="srico"><svg viewBox="0 0 16 16"><path d="M3 5h9l-2.2-2.2"/><path d="M13 11H4l2.2 2.2"/></svg></span>
+        <input id="sr-r" placeholder="替换为…（正则可用 $1 引用分组）" spellcheck="false" autocomplete="off">
+        <button id="sr-all" class="primary">全部替换</button>
+      </div>
+      <div class="srfoot">
+        <span id="srStat" class="srstat">输入关键词开始搜索</span>
+        <label class="srscope">范围
+          <select id="sr-scope">
+            <option value="both">原文 + 译文</option>
+            <option value="jp">只原文</option>
+            <option value="zh">只译文</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div id="srList" class="srlist"></div>
+
+    <details class="rulebox">
+      <summary>存为全局规则 <span class="hint">一条规则作用于所有场次，包括以后新导出的场次</span></summary>
+      <div class="note-block" style="margin:10px 0 12px">
+        「全局」说的是<strong>作用范围</strong>：导出时对库里每条记录的这串原文做替换，不管它出现在哪一场、谁说的，都一起改。
+        匹配是字符串逐字比对，所以要写足够长的原句；一处都命中不到或串太短会拒绝保存，避免误伤。
+        上面的搜索替换写的是<strong>逐行覆盖</strong>（只改你看中的那几行），两者不要重复处理同一处。
+      </div>
+      <div class="form fixform">
+        <label>日文原文 <span class="hint">写错的完整长串</span></label>
+        <input id="x-jpbad" placeholder="例：過去に踊りたいと思うことって一切ないんだよね">
+        <label>改成</label>
+        <input id="x-jpgood">
+        <label>中文原文</label>
+        <input id="x-zhbad">
+        <label>改成</label>
+        <input id="x-zhgood">
+        <label>校勘依据 <span class="hint">必填，写清凭什么这么校</span></label>
+        <textarea id="x-why" rows="2"></textarea>
+        <div class="form-actions">
+          <button id="x-preview" class="primary">试跑命中</button>
+          <button id="x-save">保存修正</button>
+        </div>
+        <div id="x-result" class="result"></div>
+      </div>
+    </details>
+
+    <div class="col-head" style="margin-top:18px">已存全局规则 <span id="fixCount"></span></div>
+    <div id="fixList" class="fixlist"></div>
+    <div class="note-block">历史修正写在 tools/asr_fixes.py 里，这里只列编辑器新增的部分；两者导出时一起生效。</div>
+  </section>
+</main>
+
+<main id="view-tag" hidden>
+  <section class="wide">
+    <div class="col-head">tag 注册表 <span id="tagCount"></span></div>
+    <div class="form tagform">
+      <label>新增 tag</label>
+      <div class="duo">
+        <input id="t-new" placeholder="2–4 字">
+        <button id="t-add">新增</button>
+      </div>
+    </div>
+    <div id="tagList" class="taglist"></div>
+    <div class="note-block">改名 / 合并会同步改写所有引用它的摘录；删除前会提醒还有多少条在用。</div>
+  </section>
+</main>
+
+<div id="ctxDrawer" class="drawer" hidden>
+  <div class="rz rz-v" id="ctxRz" title="拖动调整抽屉宽度，双击复原"></div>
+  <div class="drawer-head">
+    <div class="dh-row"><b>上下文</b><span id="ctxMeta" class="ctxmeta"></span></div>
+    <div class="dh-row">
+      <span class="ctxseg">
+        <button data-k="all" class="on">全部</button>
+        <button data-k="sc">SC</button>
+        <button data-k="dm">弹幕</button>
+      </span>
+      <button id="ctxPull" title="从手机 live-capture 增量拉取 SC 与弹幕">⇣ 拉取手机库</button>
+      <button id="ctxJump">回到选中</button>
+      <button id="ctxClose">关闭</button>
+    </div>
+    <div class="dh-row">
+      <input id="ctxSearch" class="ctxsearch" placeholder="搜 SC / 弹幕：内容、用户名" spellcheck="false" autocomplete="off">
+    </div>
+  </div>
+  <div id="ctxList" class="ctxlist"></div>
+  <div class="drawer-foot">
+    <button id="ctxPrev">↑ 更早</button>
+    <span id="ctxRange"></span>
+    <button id="ctxNext">↓ 更晚</button>
+  </div>
+</div>
+
+<div id="ovModal" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">改这一行的逐字稿 <span id="ovMeta" class="hint"></span></div>
+    <label>日文原文 <span class="hint">照她实际说的改，不要润色</span></label>
+    <textarea id="ov-jp" rows="3"></textarea>
+    <label>中文译文</label>
+    <textarea id="ov-zh" rows="3"></textarea>
+    <label>为什么改 <span class="hint">必填；只留档，不上站点</span></label>
+    <input id="ov-why" placeholder="例：这里的「神社」是 ASR 听成了同音的别的词，按弹幕锚点校回">
+    <div class="modal-actions">
+      <button id="ov-revert" class="danger" hidden>还原原文</button>
+      <button id="ov-cancel">取消</button>
+      <button id="ov-save" class="primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="askModal" class="modal" hidden>
+  <div class="modal-box askbox">
+    <div class="modal-head" id="askTitle">确认</div>
+    <div class="ask-msg" id="askMsg"></div>
+    <input id="askInput" hidden>
+    <div class="modal-actions">
+      <button id="askCancel">取消</button>
+      <button id="askOk" class="primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<div id="overlay" class="overlay" hidden><pre id="olog"></pre></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 
   .build/public/assets/data.js   site/data/ 的索引部分内联成 window.DATA
   .build/public/records/*.json   逐字稿按场次分片，档案页 / 搜索按需取
-  .build/public/quotes.json      全量摘录，摘录页 / 问答 / 时间线 / 搜索按需取
+  .build/public/quotes.json      全量摘录，摘录页 / 时间线 / 搜索按需取
   .build/public/diary/*.json     每篇日记的正文，日记详情页按需取
   .build/public/subs/*.json      双语字幕轨（按场次分文件，供外部工具取用）
   .build/public/brand/           站点图片（app.js 里有运行时拼出来的引用，整目录复制）
@@ -17,6 +17,7 @@
 sha256 前 10 位。同样的数据必然得到同样的版本号，用来判断线上是否已更新。
 """
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -83,6 +84,145 @@ def inside(t, start, end):
     return t >= s or t <= e
 
 
+def _norm_text(s):
+    """对齐用的归一：去掉标点和空格，只留实词。"""
+    return re.sub(r'[\s\u3000、。！？,.!?…ー「」『』]', '', s or '')
+
+
+_CLAUSE_SPLIT = re.compile(r'[、。！？!?…,，;；]')
+
+
+def _clauses(s):
+    """把一行拆成小句。源摘录常把逐字稿两三条并成一行，整行匹配会漏掉后半。"""
+    return [c for c in _CLAUSE_SPLIT.split(s or '') if len(_norm_text(c)) >= 3]
+
+
+def _note_phrases(note):
+    """note 里用引号补记的日语原话，是结尾定位的第二重锚点。"""
+    out = []
+    for m in re.finditer(r'[「『]([^」』]{2,40})[」』]', note or ''):
+        s = m.group(1)
+        if re.search(r'[\u3040-\u30ff]', s):
+            out.append(_norm_text(s))
+    return [s for s in out if s]
+
+
+def _gap(t1, t2):
+    """两个 HH:MM[:SS] 的秒差。"""
+    def m(x):
+        p = [int(v) for v in x.split(':')[:2]]
+        return p[0] * 60 + p[1]
+    return m(t1) - m(t2)
+
+
+_TITLE_FILLER = re.compile(
+    r'^(?:那个|这个|嗯|啊|诶|哎|所以|不过|但是|然后|反正|说到底|就是说|就是这样|嘛|其实|而且|因为)'
+    r'[，,、…\s]*'
+)
+
+
+def quote_title(lines, tag=''):
+    """摘录卡的标题：源文件可手写 title 覆盖，否则从正文首句提炼。"""
+    for l in lines or []:
+        s = re.sub(r'^[—\-]+', '', (l.get('zh') or '').strip())
+        s = _TITLE_FILLER.sub('', s)
+        s = re.split(r'[。！？!?；;]', s)[0].strip(' ，,、…')
+        if len(s) < 6:
+            continue
+        if re.search(r'(谢谢|感谢|スパチャ|superchat|超级打赏)', s, re.I):
+            continue
+        return s[:30] + ('…' if len(s) > 30 else '')
+    return tag or '摘录'
+
+
+def topic_lines(jp, zh, recs, anchor, note=''):
+    """一条摘录 = 讲同一件事的一组逐字稿条目。
+
+    正文不再单独存校勘过的 jp/zh，而是按摘录的首尾句在逐字稿里圈出同一个主题段，
+    整段逐行引用。这样摘录和逐字稿共用同一份数据：改 ASR 校勘表只需重导逐字稿，
+    摘录自动跟着变。取不到边界时退回锚点附近，保证页面不会出现空块。
+
+    结尾不能只靠「末句整行相似度」：源摘录常把两三句并成一行，整行一比就掉到阈值
+    以下，结果截在半截。这里按小句顺序往后找落点，再用 note 里补记的日语原话兜一层。
+    """
+    jp_lines = [l.strip() for l in jp.split('\n') if l.strip()]
+    zh_lines = [l.strip() for l in zh.split('\n') if l.strip()]
+    if not recs:
+        return []
+    anchor_i = next((i for i, r in enumerate(recs) if r[0] >= anchor), 0)
+    # 开头：锚点前 8 行内找首句（校勘过的句子未必逐字相同，取最相似的一行）
+    start = anchor_i
+    first = _norm_text(jp_lines[0] if jp_lines else '')
+    if first:
+        best = (0.0, anchor_i)
+        for i in range(max(0, anchor_i - 8), min(len(recs), anchor_i + 9)):
+            sc = difflib.SequenceMatcher(None, first, _norm_text(recs[i][1])).ratio()
+            if sc > best[0]:
+                best = (sc, i)
+        if best[0] >= 0.72:
+            start = best[1]
+
+    # 收尾只往后扩，不缩短：先给一个保底终点，再逐层补。
+    end = min(len(recs) - 1, start + max(len(jp_lines) - 1, 0))
+
+    # 第一层：末句整行匹配（原来那套，保留）
+    last_jp = _norm_text(jp_lines[-1] if jp_lines else '')
+    last_zh = _norm_text(zh_lines[-1] if zh_lines else '')
+    best = (0.0, end)
+    limit = min(len(recs), start + max(len(jp_lines) * 2, len(jp_lines) + 12))
+    for i in range(start, limit):
+        sj = difflib.SequenceMatcher(None, last_jp, _norm_text(recs[i][1])).ratio() if last_jp else 0
+        sz = difflib.SequenceMatcher(None, last_zh, _norm_text(recs[i][2])).ratio() if last_zh else 0
+        sc = max(sj, sz)
+        if sc > best[0]:
+            best = (sc, i)
+    if best[0] >= 0.62:
+        end = max(end, best[1])
+
+    # 尾部救援：源摘录常把连续两三句并成一行，整行相似度会被稀释。
+    # 只在紧接着的 15 秒 / 6 行里找末句尾部小句与 note 补记的原话，
+    # 避免像全行降阈值那样把下一段闲聊也吞进来。
+    phrases = []
+    for c in _clauses(jp_lines[-1] if jp_lines else '')[-2:]:
+        n = _norm_text(c)
+        if len(n) >= 5:
+            phrases.append(n)
+    phrases.extend(_note_phrases(note))
+    for phrase in phrases:
+        for i in range(end + 1, min(len(recs), end + 7)):
+            if _gap(recs[i][0], recs[end][0]) > 15:
+                break
+            if phrase in _norm_text(recs[i][1]) or phrase in _norm_text(recs[i][2]):
+                end = i
+                break
+
+    return [{'t': r[0], 'jp': r[1], 'zh': r[2]} for r in recs[start:end + 1]]
+
+
+def selected_lines(sel, recs):
+    """编辑器勾选出来的显式选段，逐行引用逐字稿，不再做相似度圈段。
+
+    sel 里是逐字稿的行号（records 数组下标，从 0 起）。行号会随重导出变化，
+    所以同时带 t 做校验：时间戳对不上就跳过那一行，不让摘录串到别处。
+    老条目没有 sel，仍走 topic_lines()，行为完全不变。
+    """
+    if not sel:
+        return None
+    out = []
+    for item in sel:
+        if isinstance(item, dict):
+            idx, t = item.get('i'), item.get('t')
+        else:
+            idx, t = item, None
+        if not isinstance(idx, int) or idx < 0 or idx >= len(recs):
+            continue
+        r = recs[idx]
+        if t and r[0] != t:
+            continue
+        out.append({'t': r[0], 'jp': r[1], 'zh': r[2]})
+    return out
+
+
 def load_sessions(site_dir):
     d = os.path.join(site_dir, 'data', 'sessions')
     out = []
@@ -140,25 +280,53 @@ def collect(site_dir):
         for t, jp, zh, tp in s['records']:
             recs_out.append({'s': i, 't': t, 'jp': jp, 'zh': zh, 'tp': tp})
 
+    recs_by_s = {}
+    for r in recs_out:
+        recs_by_s.setdefault(r['s'], []).append([r['t'], r['jp'], r['zh'], r['tp']])
+
     skipped, q_out = [], []
     for q in quotes_raw:
-        cands = [s for s in sess_out if s['date'] == q['date']]
-        hit = next((s for s in cands if inside(q['t'], s['start'], s['end'])), None)
+        want_session = (q.get('session') or '').strip()
+        if want_session:
+            hit = next((s for s in sess_out if s['key'] == want_session), None)
+        else:
+            cands = [s for s in sess_out if s['date'] == q['date']]
+            hit = next((s for s in cands if inside(q['t'], s['start'], s['end'])), None)
         if not hit:
             skipped.append('%s %s' % (q['date'], q['t']))
             continue
+        recs = recs_by_s.get(hit['id'], [])
         sc = q.get('sc')
-        jp, zh = q['jp'], q['zh']
-        if not sc:
+        dm = q.get('dm')
+        jp, zh = q.get('jp', ''), q.get('zh', '')
+        if not sc and not dm and jp and zh:
             sc, jp, zh = split_sc(jp, zh)
+        # 编辑器勾选过的条目用 sel 精确取行；老条目没有 sel，仍按首末句圈段。
+        # 正文与逐字稿共用一份数据，jp/zh 由 lines 拼出。
+        lines = selected_lines(q.get('sel'), recs)
+        if not lines:
+            lines = topic_lines(jp, zh, recs, q['t'], q.get('note', ''))
+        tags = q.get('tags') or ([q['tag']] if q.get('tag') else [])
+        tags = [str(t).strip() for t in tags if str(t).strip()]
+        if not tags:
+            tags = ['摘录']
         entry = {
             'id': 'q%d' % (len(q_out) + 1),
             's': hit['id'], 'date': hit['date'], 'week': hit['week'],
-            't': q['t'], 'tag': q['tag'],
-            'jp': jp, 'zh': zh, 'note': q.get('note', ''),
+            't': q['t'], 'tag': tags[0], 'tags': tags,
+            'title': (q.get('title') or '').strip() or quote_title(lines, tags[0]),
+            'jp': '\n'.join(l['jp'] for l in lines),
+            'zh': '\n'.join(l['zh'] for l in lines),
+            'lines': lines, 'note': q.get('note', ''),
         }
+        if want_session:
+            entry['session'] = want_session
+        if q.get('sel'):
+            entry['sel'] = q['sel']
         if sc:
             entry['sc'] = sc
+        if dm:
+            entry['dm'] = dm
         q_out.append(entry)
 
     # 日记也按 date 找场次；文件顺序即展示顺序（最新的写在最前）
@@ -222,7 +390,7 @@ def collect(site_dir):
 def write_chunks(public_dir, sess_out, recs_out):
     """逐字稿按场次拆成 records/<key>.json，返回 (总字节数, 内容指纹)。
 
-    档案页看一场只取一片；全站搜索与主题索引才按需把全部片拉下来。这样
+    档案页看一场只取一片；全站搜索才按需把全部片拉下来。这样
     data.js 不再随场次一起膨胀，新增一场也只多一个新文件，历史分片的内容
     没变就不必重下。
 
@@ -263,15 +431,22 @@ def write_side(public_dir, q_out, diary_out):
     """摘录与日记正文也从 data.js 拆出来，返回 (摘录指纹, 日记正文指纹)。
 
     首页真正要用的只有最近一场的三条摘录和一句随机引文，没必要为了它把
-    几百段摘录和所有日记正文一起下载。需要全文的页面（摘录 / 问答 / 时间线 /
-    主题详情 / 日记详情 / 搜索）再按需取：
+    几百段摘录和所有日记正文一起下载。需要全文的页面（摘录 / 时间线 /
+    日记详情 / 搜索）再按需取：
 
       quotes.json          全部摘录
       diary/<key>.json     单篇日记的正文与具名观众
 
     指纹只覆盖各自的文件内容：新增一场时历史文件不变，URL 也就不变。
     """
-    q_txt = _write_json(os.path.join(public_dir, 'quotes.json'), q_out)
+    # 正文只在 lines 里存一份：外层 jp/zh 由前端从 lines 拼出，避免同段文字存两遍
+    q_side = []
+    for q in q_out:
+        item = dict(q)
+        item.pop('jp', None)
+        item.pop('zh', None)
+        q_side.append(item)
+    q_txt = _write_json(os.path.join(public_dir, 'quotes.json'), q_side)
     q_ver = hashlib.sha256(q_txt.encode('utf-8')).hexdigest()[:10]
 
     d_dir = os.path.join(public_dir, 'diary')
@@ -400,22 +575,6 @@ def main():
         item['qn'] = q_by_s.get(d['s'], 0)
         diary_index.append(item)
 
-    # 主题的命中计数在构建期算好。以前是前端拿全量逐字稿现算，分片之后那样做
-    # 会让「打开主题列表」变成一次全库拉取；口径与前端过滤保持一致。
-    themes_raw = []
-    themes_path = os.path.join(site_dir, 'data', 'themes.json')
-    if os.path.exists(themes_path):
-        with open(themes_path, encoding='utf-8') as f:
-            themes_raw = json.load(f)
-    themes_out = []
-    for th in themes_raw:
-        kw = th.get('kw') or []
-        qn = sum(1 for q in q_out
-                 if any(w in (q['jp'] + ' ' + q['zh'] + ' ' + q.get('note', '')) for w in kw))
-        rn = sum(1 for r in recs_out
-                 if any(w in (r['jp'] + ' ' + (r['zh'] or '')) for w in kw))
-        themes_out.append(dict(th, quoteCount=qn, recCount=rn))
-
     data = {
         'meta': {
             'streamer': profile['streamer'],
@@ -441,8 +600,6 @@ def main():
             'subs': subs_meta,
         },
         'topics': [[common.TOPIC_NAMES[i], common.TOPIC_COLORS[i]] for i in range(len(common.TOPIC_NAMES))],
-        # 主题索引：名称、配色、关键词与命中计数，前端的主题页直接读它
-        'themes': themes_out,
         'sessions': sess_out,
         # 日记索引：列表与时间线只读这里，正文在 diary/<key>.json
         'diary': diary_index,

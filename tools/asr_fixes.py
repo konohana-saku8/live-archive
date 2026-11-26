@@ -152,7 +152,29 @@ FIXES = [
     ('得做很多ボフ台才行', '得做很多御札才行'),
     ('お札いっぱい作らなきゃいけないんで', 'お札いっぱい作らなきゃいけないんで'),
     ('明天也得做很多纸币才行', '明天也得做很多御札才行'),
+
+    # 11-15 00:56:32「浸透」是「神道」的同音误识（前文正在讲神道式葬礼）。
+    ('あの浸透好きで', 'あの神道好きで'),
+    ('对对对，就是那种超喜欢渗透的东西。', '对对对，就是那个，我挺喜欢神道的。'),
 ]
+
+
+# 编辑器新增的全局修正落在这个文件里，历史 FIXES 不动。
+# 每条是 {jp_bad, jp_good, zh_bad, zh_good, why, session, t}。
+import json as _json
+import os as _os
+
+_FIXES_DATA = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'fixes_data.json')
+try:
+    if _os.path.exists(_FIXES_DATA):
+        with open(_FIXES_DATA, encoding='utf-8') as _f:
+            for _e in _json.load(_f):
+                if _e.get('jp_bad') and _e.get('jp_good'):
+                    FIXES.append((_e['jp_bad'], _e['jp_good']))
+                if _e.get('zh_bad') and _e.get('zh_good'):
+                    FIXES.append((_e['zh_bad'], _e['zh_good']))
+except Exception as _exc:
+    print('!! fixes_data.json 读取失败，已忽略：%s' % _exc, file=__import__('sys').stderr)
 
 
 def apply(text):

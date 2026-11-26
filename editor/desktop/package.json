@@ -1,0 +1,13 @@
+{
+  "name": "hibane-editor-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "火羽直播档案编辑器的 Electron 桌面壳（起 Python 后端 + 加载本地页面）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

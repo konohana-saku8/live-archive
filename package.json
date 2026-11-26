@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "description": "火羽 · 直播存档站（Vite 构建）",
   "scripts": {
+    "editor": "npm --prefix editor/desktop start",
+    "editor:install": "npm --prefix editor/desktop install",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 8799 --strictPort"

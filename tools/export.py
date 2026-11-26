@@ -14,6 +14,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import asr_fixes
+import overrides
 
 
 def main():
@@ -39,6 +40,7 @@ def main():
     out_dir = os.path.join(cfg['site']['dir'], 'data', 'sessions')
 
     written, unchanged, kept = [], [], set()
+    all_ov = overrides.load()
     for s in sessions:
         meta, st = common.build_session(s)
         name = st.strftime('%Y-%m-%d_%H%M') + '.json'
@@ -49,6 +51,10 @@ def main():
             src, tr = asr_fixes.apply(src), asr_fixes.apply(tr)
             recs.append([datetime.fromtimestamp(t).strftime('%H:%M:%S'),
                          src, tr, common.classify(src, tr)])
+        # 单行覆盖最后套：它写的就是最终文本，不再和 FIXES 叠
+        ov = all_ov.get(name[:-5])
+        if ov:
+            overrides.apply_lines(recs, ov)
         payload['records'] = recs
         path = os.path.join(out_dir, name)
         old = None

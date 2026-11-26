@@ -288,51 +288,9 @@ main{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:0 40px 9
    右侧把每场压成一条一格一分钟的话题带，既是数据也当导航。 */
 .hero{
   position:relative;padding:76px 0 54px;
-  display:grid;grid-template-columns:minmax(0,1fr) 372px;
-  column-gap:58px;row-gap:26px;align-items:start;
-}
-@media(max-width:1080px){
-  .hero{grid-template-columns:minmax(0,1fr);gap:0}
-  .hero-side{display:none}
+  display:grid;grid-template-columns:minmax(0,1fr);row-gap:26px;align-items:start;
 }
 .hero-copy{min-width:0}
-
-/* 右侧色带面板 */
-.hero-side{
-  margin-top:2px;padding:16px 15px 13px;border-radius:16px;
-  border:1px solid var(--line);position:relative;overflow:hidden;
-  background:linear-gradient(178deg,rgba(255,255,255,.052),rgba(255,255,255,.012) 62%,rgba(255,122,69,.035));
-}
-/* 包一层再倾斜：.hero-side 自己要用 transform 做淡入，两者会打架 */
-/* 倾斜由 JS 降频写 inline transform；这里只给静态初值 */
-.hs-tilt{
-  transform:perspective(900px);
-  transition:transform .22s ease-out;
-}
-/* 暖光放在左下角，别压住标题行与右上角的计数 */
-.hero-side::after{
-  content:"";position:absolute;left:-70px;bottom:-110px;width:210px;height:210px;border-radius:50%;
-  background:radial-gradient(circle,rgba(255,122,69,.16),transparent 70%);pointer-events:none;
-}
-.hs-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px;position:relative;z-index:1}
-.hs-head b{font-size:12px;font-weight:600;letter-spacing:.16em;color:var(--ink-2)}
-.hs-head em{font-style:normal;font-size:10px;letter-spacing:.03em;color:var(--dim-2);font-family:var(--mono)}
-/* 场次色带：每分钟最少见的话题，天生五颜六色；常态压低饱和度当纹理，悬停再恢复 */
-.hb{
-  position:relative;display:block;height:10px;border-radius:3px;overflow:hidden;
-  background:rgba(255,255,255,.045);filter:saturate(.72) brightness(.95);
-  transition:filter .2s;
-}
-.hb i{position:absolute;top:0;bottom:0;opacity:.85;transition:opacity .18s}
-
-/* 侧栏主题入口：两列小胶囊，替代原来七成是「日常杂聊」的统计条 */
-.hero-side .th-chips{gap:5px}
-.hero-side .th-chip{padding:4px 7px;font-size:10.5px}
-.hs-foot{
-  position:relative;z-index:1;
-  margin-top:10px;padding-top:9px;border-top:1px solid var(--line);
-  font-family:var(--mono);font-size:10px;color:var(--dim-2);letter-spacing:.04em;
-}
 
 /* 进场淡入：JS 给 .rv 元素补 .in */
 .rv{opacity:0;transform:translateY(16px)}
@@ -340,7 +298,6 @@ main{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:0 40px 9
   opacity:1;transform:none;
   transition:opacity .62s cubic-bezier(.2,.8,.2,1),transform .62s cubic-bezier(.2,.8,.2,1);
 }
-.hero-side.rv.in{transition-delay:.14s}
 
 .hero-sm{padding-bottom:26px;grid-template-columns:minmax(0,1fr)}
 .hero-sm h1{font-size:clamp(38px,5.4vw,64px)}
@@ -499,9 +456,6 @@ a.hl .hl-dot{
 
 /* ---------- section ---------- */
 .sec{margin-top:64px}
-/* 话题分布桌面在 hero 右栏，窄屏没有右栏时才在这里出现 */
-.sec-narrow{display:none}
-@media(max-width:1080px){.sec-narrow{display:block}}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:18px;margin-bottom:22px}
 .sec-head h2{
   font-size:13px;letter-spacing:.26em;font-weight:600;margin:0;color:var(--ink-2);
@@ -512,16 +466,14 @@ a.hl .hl-dot{
 .sec-head .more:hover{color:var(--fire-soft)}
 
 /* ---------- 摘录：单列条目 ----------
-   原来是三列瀑布流（columns），摘录长度差得多，三列会被撑成参差不齐的长短条，
-   而且 columns 是列优先，读起来是「竖着读完一列再跳回上边」。
-   改成单列的条目式：左侧窄栏放标签与时间，右侧正文，按时间顺序往下读。 */
+   一条摘录是一块话题贴：标题行放圆角标签 + 简短概括，正文逐条引用逐字稿。
+   每句自带时间戳，左侧不再重复一个日期时间栏。 */
 .qlist{
   max-width:1040px;
   border-top:1px solid var(--line);
 }
 .quote{
-  display:grid;grid-template-columns:112px minmax(0,1fr);gap:0 26px;
-  padding:28px 58px 26px 20px;position:relative;
+  padding:22px 20px 24px;position:relative;
   border-bottom:1px solid var(--line);
   transition:background .25s;
 }
@@ -532,58 +484,81 @@ a.hl .hl-dot{
 }
 .quote:hover{background:rgba(255,255,255,.022)}
 .quote:hover::before{opacity:.7}
-.qside{padding-top:2px}
-.qside .tag{
-  display:inline-block;font-size:10.5px;letter-spacing:.16em;
+.qhead{display:flex;align-items:baseline;gap:6px 10px;margin-bottom:12px;flex-wrap:wrap}
+.qhead .tag{
+  flex:none;display:inline-block;font-size:10.5px;letter-spacing:.16em;
   color:var(--tagc,var(--fire-soft));
   border:1px solid var(--tagc,rgba(255,122,69,.3));border-radius:999px;padding:2px 9px;
 }
-.qside .qtime{
-  display:block;margin-top:12px;font-family:var(--mono);font-size:11px;
-  color:var(--dim-2);letter-spacing:.06em;line-height:1.7;transition:.2s;
+.qtitle{
+  flex:1;min-width:0;margin:0;font-size:16px;font-weight:600;line-height:1.5;
+  color:var(--ink);letter-spacing:.01em;
 }
-.qside .qtime i{display:block;font-style:normal;color:var(--dim-2)}
-.qside .qtime:hover,.qside .qtime:hover i{color:var(--fire-soft)}
+.qdate{
+  flex:none;font:11px var(--mono);color:var(--dim-2);text-decoration:none;
+  letter-spacing:.05em;transition:color .2s;
+}
+.qdate:hover{color:var(--fire-soft)}
 .qbody{min-width:0}
+/* 单条摘录可折叠：收起后只留标题行，按钮就地变成「展开」 */
+.quote.collapsed{padding-bottom:18px}
+.quote.collapsed .qhead{margin-bottom:0}
+.quote.collapsed .qbody{display:none}
 /* 摘录：观众那条 SC 当作被引用的评论，她的话缩进成跟帖 */
 .qsc{
   margin:0 0 13px;padding:10px 15px 11px;
   background:rgba(255,255,255,.04);
   border:1px solid rgba(255,255,255,.055);border-radius:10px;
 }
+/* 引用块发送者：SC 用暖色胶囊，和日记正文的 .dname-sc 是同一套语义 */
 .qsc b{
-  display:block;margin-bottom:4px;
-  font:500 11px/1.5 var(--mono);letter-spacing:.05em;color:var(--dim-2);
+  display:inline-block;margin-bottom:5px;padding:1px 6px;
+  font:500 11px/1.5 var(--mono);letter-spacing:.05em;color:var(--fire-soft);
+  border-radius:5px;background:rgba(255,122,69,.1);
+  box-shadow:inset 0 0 0 1px rgba(255,122,69,.32);
 }
 .qsc p{margin:0;font-size:13.5px;line-height:1.75;color:var(--dim);white-space:pre-line}
-.qreply.on{padding-left:16px;border-left:1.5px solid rgba(255,122,69,.26)}
-.quote .jp{
-  font-family:var(--jp);font-size:14.5px;line-height:1.95;color:var(--dim);
-  margin:0 0 13px;letter-spacing:.01em;white-space:pre-line;
+/* 弹幕引用：同一套引用块，换蓝调并标出「弹幕」，发送者胶囊也转冷色 */
+.qsc.qdm{background:rgba(120,170,225,.05);border-color:rgba(140,180,225,.12)}
+.qsc.qdm b{
+  color:#8fb6dc;background:rgba(140,180,225,.1);
+  box-shadow:inset 0 0 0 1px rgba(140,180,225,.28);
 }
-.quote .zh{
-  font-size:16.5px;line-height:1.9;color:var(--ink);margin:0;
-  font-weight:500;white-space:pre-line;
+.qk{display:inline-block;margin-left:6px;padding:0 3px;vertical-align:1px;font-weight:400;
+  font:500 9px/1.5 var(--mono);letter-spacing:.06em;color:#8fb6dc;
+  border:1px solid rgba(140,180,225,.3);border-radius:3px}
+.qreply.on{padding-left:16px;border-left:1.5px solid rgba(255,122,69,.26)}
+/* 一条摘录是一段话题贴：逐条引用逐字稿，行距收紧到阅读密度 */
+.qthread{display:block}
+.qthread.on{padding-left:14px;border-left:1.5px solid rgba(255,122,69,.26)}
+.qpost{
+  display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;
+  padding:4px 6px;border-radius:6px;transition:background .15s;
+}
+.qpost:hover{background:rgba(255,255,255,.028)}
+.qt{
+  font:10px/1.5 var(--mono);color:var(--dim-2);padding-top:2px;
+  white-space:nowrap;text-decoration:none;transition:color .2s;
+}
+.qt:hover{color:var(--fire-soft)}
+.qpc{min-width:0}
+.qpost .jp{
+  font-family:var(--jp);font-size:13.5px;line-height:1.58;
+  color:var(--ink-2);margin:0;word-break:break-word;
+}
+.qpost .zh{
+  font-size:12.5px;line-height:1.55;color:var(--dim);margin:1px 0 0;
 }
 .quote .note{
-  margin:15px 0 0;padding-top:12px;border-top:1px dashed var(--line);
-  font-size:12px;color:var(--dim-2);line-height:1.75;
+  margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--line);
+  font-size:11.5px;color:var(--dim-2);line-height:1.65;
 }
-.quote .copy{
-  position:absolute;right:6px;top:24px;
-  font-size:11px;letter-spacing:.1em;color:var(--dim-2);font-family:var(--mono);
-  padding:4px 9px;border-radius:6px;border:1px solid transparent;
-  opacity:.55;transition:.2s;
-}
-.quote:hover .copy{opacity:1;color:var(--dim)}
-.quote .copy:hover{color:var(--fire-soft);border-color:rgba(255,122,69,.3)}
 @media(max-width:760px){
-  .quote{grid-template-columns:minmax(0,1fr);gap:12px;padding:24px 0 22px 16px}
-  .quote::before{top:22px;bottom:20px}
-  .qside{display:flex;align-items:center;gap:12px;padding-top:0}
-  .qside .qtime{margin-top:0;display:flex;gap:8px}
-  .qside .qtime i{display:inline}
-  .quote .copy{position:static;justify-self:end;margin-top:8px;opacity:1;padding:4px 0;border:0}
+  .quote{padding:20px 0 20px 14px}
+  .quote::before{top:20px;bottom:18px}
+  .qhead{gap:6px 8px}
+  .qtitle{flex-basis:100%;font-size:15px}
+  .quote .qacts{opacity:1}
   .qsc{padding:9px 12px 10px}
   .qreply.on{padding-left:13px}
 }
@@ -692,20 +667,6 @@ a.hl .hl-dot{
 .latest-r .qmini span{font-size:10.5px;color:var(--dim-2);font-family:var(--mono);transition:color .2s}
 .latest-r .qmini:hover span{color:var(--fire-soft)}
 
-/* ---------- 主题入口胶囊 ---------- */
-.th-chips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;position:relative;z-index:1}
-.th-chip{display:flex;align-items:center;gap:7px;min-width:0;padding:6px 9px;
-  border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.02);
-  color:var(--ink-2);font-size:11.5px;white-space:nowrap;
-  transition:border-color .2s,background .2s,color .2s}
-.th-chip:hover{border-color:var(--thc);background:color-mix(in srgb,var(--thc) 12%,transparent);color:#fff}
-.th-chip:focus-visible{outline:2px solid var(--thc);outline-offset:2px}
-.th-ico{flex:0 0 16px;width:16px;text-align:center;color:var(--thc);font-size:12px}
-.th-name{overflow:hidden;text-overflow:ellipsis}
-/* 窄屏补的那一份铺开成四列，手机收成两列 */
-.th-chips-wide{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
-@media(max-width:760px){.th-chips-wide{grid-template-columns:repeat(2,minmax(0,1fr))}}
-
 /* ---------- 单场逐字稿：就地渲染在存档页日历下方，不再有侧栏列表 ---------- */
 .arch-single{max-width:940px;margin-top:44px;padding-top:30px;border-top:1px solid var(--line-strong)}
 .cal-backtop{
@@ -755,12 +716,12 @@ a.hl .hl-dot{
 .toggle input{accent-color:var(--fire);width:14px;height:14px}
 .count{font-size:11.5px;color:var(--dim-2);font-family:var(--mono);margin-bottom:6px}
 
-.tr{display:grid;grid-template-columns:80px 3px 1fr;gap:14px;padding:9px 10px;border-radius:8px;transition:background .15s}
+.tr{display:grid;grid-template-columns:76px 3px 1fr;gap:12px;padding:5px 9px;border-radius:7px;transition:background .15s}
 .tr:hover{background:rgba(255,255,255,.035)}
 .tr .t{font-family:var(--mono);font-size:10.5px;color:var(--dim-2);padding-top:4px;letter-spacing:.02em;white-space:nowrap}
 .tr .dot{width:3px;border-radius:2px;margin:6px 0 2px;opacity:.55}
-.tr .jp{font-family:var(--jp);font-size:14.5px;line-height:1.78;color:var(--ink-2);word-break:break-word}
-.tr .zh{font-size:13px;line-height:1.7;color:var(--dim);margin-top:3px}
+.tr .jp{font-family:var(--jp);font-size:14px;line-height:1.6;color:var(--ink-2);word-break:break-word}
+.tr .zh{font-size:12.5px;line-height:1.55;color:var(--dim);margin-top:1px}
 .tr.nozh .zh{display:none}
 .tr.hit{background:rgba(255,122,69,.18);box-shadow:inset 3px 0 0 var(--fire)}
 mark{background:rgba(255,122,69,.28);color:#ffe9dc;border-radius:2px;padding:0 1px}
@@ -1368,49 +1329,13 @@ body.has-player{padding-bottom:82px}
 .screply{border-left:2px solid rgba(91,140,255,.5);padding-left:14px}
 .screply .qsc{margin:0 0 12px;padding:10px 12px;border-radius:8px;
   background:rgba(91,140,255,.07);border:1px solid rgba(91,140,255,.18)}
-.screply .qsc b{display:block;font-size:11px;color:#8fa9ff;margin-bottom:5px;letter-spacing:.03em}
+.screply .qsc b{display:block;font-size:11px;color:#8fa9ff;margin-bottom:5px;letter-spacing:.03em;
+  padding:0;border-radius:0;background:none;box-shadow:none}
 .screply .qsc p{margin:0;font-size:13px;line-height:1.7;color:var(--ink-2)}
 .screply .jp{font-family:var(--jp);font-size:14.5px;line-height:1.78;color:var(--ink-2);margin:0}
 .screply .zh{font-size:13px;line-height:1.7;color:var(--dim);margin:4px 0 0}
 .scback{display:inline-block;margin-top:10px;font-size:11px;color:var(--dim-2);transition:color .2s}
 .scback:hover{color:var(--fire-soft)}
-
-/* ---------- 主题索引 ---------- */
-.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;padding:34px 0 10px;max-width:1120px}
-.tcard{position:relative;display:grid;grid-template-columns:44px 1fr;gap:4px 14px;
-  padding:20px 20px 22px;border:1px solid var(--line);border-radius:14px;
-  background:linear-gradient(160deg,rgba(255,255,255,.035),rgba(255,255,255,.01));
-  transition:transform .25s,border-color .25s,box-shadow .25s;overflow:hidden}
-.tcard::before{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--thc);opacity:.55;transition:opacity .25s}
-.tcard:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--thc) 45%,transparent);
-  box-shadow:0 22px 46px -30px var(--thc)}
-.tcard:hover::before{opacity:1}
-.tc-ico{grid-row:1/3;width:44px;height:44px;display:grid;place-items:center;
-  border-radius:11px;background:color-mix(in srgb,var(--thc) 14%,transparent);
-  color:var(--thc);font-size:20px;font-family:var(--jp)}
-.tc-main h3{margin:1px 0 5px;font-size:16px;font-weight:600;color:var(--ink)}
-.tc-main p{margin:0;font-size:12px;line-height:1.6;color:var(--dim)}
-.tc-n{margin-top:12px;font-size:11px;color:var(--dim-2)}
-.tc-n b{font-size:15px;color:var(--thc);font-family:var(--mono)}
-.tc-n span{margin-left:6px}
-.tc-n i{font-style:normal}
-.tc-go{position:absolute;right:18px;top:16px;font-size:11px;color:var(--dim-2);opacity:0;transition:opacity .25s}
-.tcard:hover .tc-go{opacity:1}
-.hero-copy.tdetail h1{font-size:42px}
-.td-stat{margin-top:16px;font-size:13px;color:var(--dim)}
-.td-stat b{font-family:var(--mono);font-size:18px;color:var(--thc)}
-.td-stat i{font-style:normal;margin:0 6px;color:var(--dim-2)}
-.t-trlist{max-width:940px}
-.t-trlist .tr .t{color:var(--fire-soft)}
-@media(max-width:720px){
-  .tgrid{grid-template-columns:1fr;padding:24px 0 6px;gap:12px}
-  .tc-go{opacity:1}
-  .hero-copy.tdetail h1{font-size:32px}
-  .tl{left:0;transform:none;width:100%;gap:8px;padding:8px 10px;border-radius:12px 12px 0 0}
-  .tl-tag{display:none}
-  .tl-label{display:none}
-  .tl-play{padding:8px 10px}
-}
 
 /* ---------- 首页开播热力图 ---------- */
 .hm{padding:22px 24px 16px;border:1px solid var(--line);border-radius:14px;
@@ -1440,33 +1365,6 @@ body.has-player{padding-bottom:82px}
   .hm-col,.hm-grid{gap:3px}
 }
 
-/* ---------- 问答档案 ---------- */
-.qa-list{max-width:1080px;margin:0 auto;padding:0 0 80px}
-.qa-group{margin:0 0 46px}
-.qa-group h3{display:flex;align-items:baseline;gap:12px;margin:0 0 16px;font-size:17px;font-weight:600;color:var(--ink)}
-.qa-group h3 span{font:11px var(--mono);color:var(--dim-2)}
-.qa-item{display:grid;grid-template-columns:132px minmax(0,1fr);gap:20px;padding:22px 0;border-top:1px solid var(--line)}
-.qa-side{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
-.qa-when{display:flex;flex-direction:column;font:12px var(--mono);color:var(--dim);text-decoration:none}
-.qa-when i{font-style:normal;color:var(--dim-2);font-size:10px}
-.qa-when:hover{color:var(--fire-soft)}
-.qa-main{min-width:0}
-.qa-q{padding:12px 16px;border-left:2px solid #5b83ab;background:rgba(90,130,175,.07);border-radius:0 10px 10px 0}
-.qa-who{font-size:11px;color:#8fb6dc;letter-spacing:.04em}
-.qa-q p{margin:3px 0 0;color:var(--ink-2);font-size:13.5px;line-height:1.75;white-space:pre-wrap}
-.qa-a{padding:14px 0 0 18px}
-.qa-a .jp{margin:0;font-family:var(--jp);font-size:15px;line-height:1.85;color:var(--ink);white-space:pre-wrap}
-.qa-a .zh{margin:8px 0 0;font-size:13.5px;line-height:1.8;color:var(--dim);white-space:pre-wrap}
-.qa-src{display:inline-block;margin-top:12px;font-size:11.5px;color:var(--fire-soft);text-decoration:none}
-.qa-src:hover{text-decoration:underline}
-.qa-item.hit{background:linear-gradient(90deg,rgba(255,122,69,.1),transparent 70%);border-radius:12px}
-@media(max-width:720px){
-  .qa-item{grid-template-columns:1fr;gap:8px;padding:18px 0}
-  .qa-side{flex-direction:row;align-items:center;gap:14px}
-  .qa-when{flex-direction:row;gap:6px}
-  .qa-a{padding-left:4px}
-}
-
 /* ---------- 统一时间线 ---------- */
 .tl-count{max-width:1080px;margin:0 auto;padding:0 0 8px;font:11px var(--mono);color:var(--dim-2)}
 .tl-days{max-width:1080px;margin:0 auto;padding:0 0 90px}
@@ -1481,7 +1379,6 @@ body.has-player{padding-bottom:82px}
 .tl-row:last-child .tl-node::before{bottom:17px}
 .tl-node::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--dim-2);box-shadow:0 0 0 3px var(--bg);z-index:1}
 .kind-diary .tl-node::after{background:var(--fire)}
-.kind-qa .tl-node::after{background:#79a9d6}
 .kind-dyn .tl-node::after{background:#a89bc9}
 .tl-card{padding:11px 16px 13px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.018);min-width:0}
 .tl-kicker{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dim-2)}
@@ -1492,50 +1389,17 @@ body.has-player{padding-bottom:82px}
 .tl-jp{margin:6px 0 0;font-family:var(--jp);font-size:14px;color:var(--ink-2);line-height:1.8;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .tl-q{margin:6px 0;padding:6px 10px;border-left:2px solid #5b83ab;background:rgba(90,130,175,.07);font-size:12px;color:var(--dim);border-radius:0 6px 6px 0}
 .tl-q b{color:#8fb6dc;margin-right:8px}
+/* 时间线引用块里的「弹幕」小标，SC 不加标 */
+.tl-dm{display:inline-block;margin-right:6px;padding:0 3px;vertical-align:1px;
+  font-size:9px;color:#8fb6dc;border:1px solid rgba(140,180,225,.3);border-radius:3px}
 @media(max-width:640px){
   .tl-row{grid-template-columns:52px 14px minmax(0,1fr);gap:6px}
   .tl-hour{font-size:10px}
   .tl-card{padding:10px 12px}
 }
 
-/* ---------- 沉浸阅读 ---------- */
-.zen-open{margin-top:18px;display:inline-flex;align-items:center;gap:10px;padding:9px 16px;border:1px solid rgba(255,122,69,.35);border-radius:999px;background:rgba(255,122,69,.08);color:var(--fire-soft);font-size:12.5px;cursor:pointer;transition:.2s}
-.zen-open:hover{background:rgba(255,122,69,.16);border-color:var(--fire)}
-.zen-open span{font-size:10.5px;color:var(--dim)}
-/* 锁定滚动用独立类名：.zen-open 是按钮（display:inline-flex），挂到 body 上会把
-   整个页面变成 inline-flex、宽度撑到内容宽度，手机端看起来就像画布比屏幕大。 */
-body.zen-locked{overflow:hidden}
-.zen{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;background:var(--bg)}
-.zen[hidden]{display:none}
-.zen-top{display:flex;align-items:center;gap:16px;padding:16px 28px;border-bottom:1px solid var(--line)}
-.zen-title{font-size:14px;font-weight:600;color:var(--ink)}
-.zen-n{font:11px var(--mono);color:var(--dim-2)}
-.zen-close{margin-left:auto;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:none;color:var(--dim);font-size:11px;cursor:pointer}
-/* 居中用 margin:auto 而不是 align-items:center：flex 居中在内容超高时会把顶部顶出滚动区、
-   那段永远滚不到。margin:auto 在内容装得下时居中，超高时自动退化为顶部对齐，完整可滚。 */
-.zen-stage{flex:1;min-height:0;overflow-y:auto;display:flex;justify-content:center;padding:32px 20px}
-.zen-card{width:min(760px,100%);flex:none;margin:auto;padding:34px 40px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:0 30px 80px -30px #000}
-.zen-meta{display:flex;align-items:center;gap:14px;margin-bottom:20px}
-.zen-meta a{font:11px var(--mono);color:var(--dim);text-decoration:none}
-.zen-card .qsc{margin-bottom:20px}
-.zen-card .jp{margin:0;font-family:var(--jp);font-size:20px;line-height:1.95;color:var(--ink);white-space:pre-wrap}
-.zen-card .zh{margin:20px 0 0;font-size:15px;line-height:1.9;color:var(--dim);white-space:pre-wrap}
-.zen-card .note{margin:16px 0 0;padding-top:12px;border-top:1px dashed var(--line);font-size:11.5px;color:var(--dim-2)}
-.zen-bot{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 28px;border-top:1px solid var(--line)}
-.zen-prev,.zen-next{padding:8px 16px;border:1px solid var(--line-strong);border-radius:99px;background:none;color:var(--ink-2);font-size:12px;cursor:pointer}
-.zen-prev:hover,.zen-next:hover{border-color:var(--fire);color:var(--fire-soft)}
-.zen-hint{font-size:11px;color:var(--dim-2)}
-@media(max-width:640px){
-  .zen-top,.zen-bot{padding:12px 14px}
-  .zen-stage{padding:16px 12px}
-  .zen-card{padding:20px 18px}
-  .zen-card .jp{font-size:17px}
-  .zen-card .zh{font-size:14px}
-  .zen-hint{display:none}
-}
-
 /* 摘录右上角：复制 + 生成图片卡片 */
-.quote .qacts{position:absolute;right:6px;top:22px;display:flex;gap:3px;opacity:.55;transition:.2s}
+.quote .qacts{flex:none;display:flex;gap:3px;opacity:.55;transition:.2s}
 .quote:hover .qacts,.qacts:focus-within{opacity:1}
 .quote .qacts button{font:11px var(--mono);color:var(--dim-2);padding:4px 8px;border-radius:6px;border:1px solid transparent;background:none;cursor:pointer;transition:.2s}
 .quote .qacts button:hover{color:var(--fire-soft);border-color:rgba(255,122,69,.3)}
@@ -1557,11 +1421,10 @@ body.zen-locked{overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .glow{animation:none}
   .rv{opacity:1;transform:none;transition:none}
-  .th-chip{transition:none}
   .qcard:hover{transform:none}
   /* 氛围层保留静态画面，关掉一切位移与粒子 */
-  .amb-far,.amb-scene,.amb-embers,.hero-links,.hs-tilt{transform:none}
-  .hero-links,.hs-tilt{transition:none}
+  .amb-far,.amb-scene,.amb-embers,.hero-links{transform:none}
+  .hero-links{transition:none}
   .amb-embers{display:none}
   .amb-light{display:none}
   .bgm,.bgm-tab{transition:none}
@@ -1569,7 +1432,6 @@ body.zen-locked{overflow:hidden}
   .totop{transition:none;transform:none}
   #app.page-in{animation:none}
   .tl-head{transition:none}
-  .tcard,.tcard::before,.tc-go,.hm-cell{transition:none}
-  .tcard:hover{transform:none}
-  .zen-open,.zen-close,.zen-prev,.zen-next,.kw,.qacts button{transition:none}
+  .hm-cell{transition:none}
+  .kw,.qacts button{transition:none}
 }

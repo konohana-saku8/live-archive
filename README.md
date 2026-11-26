@@ -2,14 +2,15 @@
 
 火羽在 B 站直播的逐字稿档案。数据来自两个采集端：LiveTranslate（系统音频 → 日语 ASR → 混元 MT 译文）写 `TranslationHistory`，danmaku-it（B 站弹幕 / SC 旁路采集）写 `sc_message`、`danmaku`、`room_event`。两者共用一个 SQLite 文件，本仓库只保存整理后的结果，不入库数据库本身。
 
-整个链路（三个项目、库表结构、切场规则、已知坑、备份与重建）见 **`AGENT.md`**；本文件只讲站点本身。
+整个链路（三个项目、库表结构、切场规则、已知坑、备份与重建）见 [AGENT.md](AGENT.md) 及其文档地图；本文件只讲站点本身。
 
 站点：https://konohana-saku8.github.io/live-archive/
 
 ## 结构
 
 ```
-AGENT.md                 整条链路的总说明（库表结构、切场规则、坑、备份与重建），优先读这份
+AGENT.md                 入口与文档地图（指向 docs/ 下各专题），优先读这份
+docs/                    维护文档：库表、站点、写作与摘录规范、前端、坑等专题（不在站点发布）
 config.toml              本机配置（db 路径、切场阈值、时间窗），**不入库**
 config.example.toml      配置模板：复制成 config.toml 后按机器修改
 package.json             Vite 构建（唯一的 npm 依赖就是 vite 本身）

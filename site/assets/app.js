@@ -6,7 +6,7 @@
 
   /* ---------- 按需数据 ----------
      逐字稿按场次拆进 records/<key>.json；摘录全量在 quotes.json；日记正文在
-     diary/<key>.json。data.js 只留场次表、日记索引、主题与首页要用的几句摘录，
+     diary/<key>.json。data.js 只留场次表、日记索引与首页要用的几句摘录，
      所以首页的体积不随场次 / 摘录条数增长。内容不变时 URL 上的 ?v= 也不变，
      可以放心吃长缓存。 */
   var RC = { sess: {}, inflight: {}, all: null, allInflight: null, onStep: null, done: 0, total: 0 };
@@ -83,7 +83,7 @@
   RC.loadAll = loadAll;
 
   /* ---------- 摘录与日记正文 ----------
-     这两块不进 data.js：摘录页 / 问答 / 时间线 / 主题详情 / 搜索才要摘录，
+     这两块不进 data.js：摘录页 / 时间线 / 搜索才要摘录，
      日记详情才要正文。取到后挂回 D.quotes 与日记条目上，后续渲染仍按原字段取。 */
   var AQ = { rows: null, inflight: null, failed: false };
   var AD = { all: false, allInflight: null, inflight: {} };
@@ -99,6 +99,12 @@
       })
       .then(function (rows) {
         AQ.rows = rows || [];
+        // 摘录正文只存 lines（逐字稿原条目）；jp/zh 由它拼出，供搜索、复制、卡片共用
+        AQ.rows.forEach(function (q) {
+          if (!q.lines) return;
+          q.jp = q.lines.map(function (l) { return l.jp; }).join('\n');
+          q.zh = q.lines.map(function (l) { return l.zh; }).join('\n');
+        });
         AQ.failed = false;
         D.quotes = AQ.rows;
         AQ.inflight = null;
@@ -180,7 +186,7 @@
   }
 
   var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false,
-    qaMode: 'tag', tlKind: 'all', zen: false, zenIdx: 0, learn: false };
+    tlKind: 'all', learn: false, qCollapsed: {} };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
@@ -266,6 +272,8 @@
     return TAG_PALETTE[h % TAG_PALETTE.length];
   }
   function tagStyle(t) { return ' style="--tagc:' + tagColor(t) + '"'; }
+  // 一条摘录可以挂多个 tag；老数据只有 tag，取一下并集即可。
+  function qTags(q) { return q.tags && q.tags.length ? q.tags : [q.tag].filter(Boolean); }
 
   /* 页脚元信息：built 是这次构建的时刻（由 tools/build.py 写入），generated 是
      数据截止到的那一场结束时间。两者都有就都显示——只写「更新于」容易让人以为
@@ -418,7 +426,6 @@
   function route() {
     pageTok++;                  // 之前的异步载入完成后不再落地到新页面
     stopLive();                 // 清掉上一页的时间轴定时器与滚动监听
-    closeZen();                 // 沉浸浮层是全局的，换页时一并收掉
     setNightScene(false);
     updateProgress();
     var r = parseHash();
@@ -426,7 +433,6 @@
     state.hideEmpty = false;
     state.scOnly = false;
     if (r.view === 'quotes') { setNav('quotes'); renderQuotes(); }
-    else if (r.view === 'qa') { setNav('qa'); renderQA(); }
     else if (r.view === 'timeline') { setNav('timeline'); renderTimeline(); }
     // 存档只有一个页面：日历选日 → 选场次 → 同页展开逐字稿
     else if (r.view === 'archive') {
@@ -437,9 +443,11 @@
       });
     }
     else if (r.view === 'diary') { setNav('diary'); renderDiary(r.seg1); }
-    else if (r.view === 'topics') { setNav('topics'); renderTopics(r.seg1); }
-    // 动态已经并进各篇日记，旧的 #/dynamics 链接引导到日记列表，别静悄悄回首页
+    // 旧链接引导到仍存在的栏目，别静悄悄回首页：
+    // 动态并进日记，问答并进摘录，主题入口已撤掉。
     else if (r.view === 'dynamics') { location.replace('#/diary'); return; }
+    else if (r.view === 'qa') { location.replace('#/quotes'); return; }
+    else if (r.view === 'topics') { location.replace('#/'); return; }
     else if (r.view === 'about') { setNav('about'); renderAbout(); }
     else { setNav('home'); renderHome(); }
     window.scrollTo(0, 0);
@@ -535,16 +543,6 @@
     '</div>';
   }
 
-  // 首页主题入口：原「话题分布」七成落在日常杂聊，统计条没有信息量；
-  // 换成主题索引的入口，点开就能看到命中的摘录与原话。
-  function themeChipsHTML() {
-    return THEMES.map(function (th) {
-      return '<a class="th-chip" href="#/topics/' + th.id + '" style="--thc:' + th.color + '">' +
-        '<span class="th-ico">' + th.icon + '</span>' +
-        '<span class="th-name">' + esc(th.name) + '</span></a>';
-    }).join('');
-  }
-
   function renderHome() {
     var last = D.sessions[D.sessions.length - 1];
     // 首屏只带构建期挑好的几句：最近一场的三条 + 随机引文池，不再筛全量摘录
@@ -619,13 +617,6 @@
             '<a class="btn" href="#/archive">进存档</a>' +
           '</div>' +
         '</div>' +
-        '<aside class="hero-side rv" id="topicSide">' +
-          '<div class="hs-tilt">' +
-            '<div class="hs-head"><b>主题索引</b><em>' + THEMES.length + ' 个主题</em></div>' +
-            '<div class="th-chips">' + themeChipsHTML() + '</div>' +
-            '<div class="hs-foot">反复聊到的那些东西 · 点开看摘录与原话</div>' +
-          '</div>' +
-        '</aside>' +
 
         // 首屏收在一段大引言上：一进来就能看到一句真正的原话
         (dq && dqText
@@ -680,12 +671,6 @@
             '</div>'
           : '<div class="empty">还没有日记。</div>') +
       '</section>' +
-      // 窄屏没有右栏，主题入口在这里补一份；桌面由 hero 侧栏承担
-      '<section class="sec rv sec-narrow">' +
-        '<div class="sec-head"><h2>主题索引</h2><a class="more" href="#/topics">全部主题 →</a></div>' +
-        '<div class="th-chips th-chips-wide">' + themeChipsHTML() + '</div>' +
-      '</section>' +
-
       '<section class="sec rv">' +
         '<div class="sec-head"><h2>开播热力</h2><a class="more" href="#/archive">打开存档 →</a></div>' +
         heatmapHTML() +
@@ -876,188 +861,6 @@
   }
 
   /* ---------- quotes ---------- */
-  /* ---------- 沉浸阅读 ----------
-     把当前筛选结果变成一次一张的卡片：键盘左右翻、手机左右滑，Esc 退出。
-     长段整段显示不截断，卡片内部可以自己滚。 */
-  var zenKey = null;
-  function showZen(i) {
-    var list = state.qList || [];
-    if (!list.length) return;
-    state.zenIdx = (i + list.length) % list.length;
-    var q = list[state.zenIdx];
-    var sc = q.sc
-      ? '<div class="qsc"><b>' + esc(q.sc.name || '观众') + '</b><p>' + esc(q.sc.text) + '</p></div>'
-      : '';
-    var card = document.getElementById('zenCard');
-    if (card) {
-      card.innerHTML =
-        '<div class="zen-meta"><span class="tag"' + tagStyle(q.tag) + '>' + esc(q.tag) + '</span>' +
-          '<a href="#/archive/' + q.s + '?t=' + encodeURIComponent(q.t) + '">' +
-            esc(q.date.replace('-', '.')) + ' ' + esc(q.t) + '</a></div>' +
-        sc +
-        '<p class="jp">' + esc(q.jp) + '</p>' +
-        '<p class="zh">' + esc(q.zh) + '</p>' +
-        (q.note ? '<p class="note">' + esc(q.note) + '</p>' : '');
-    }
-    var n = document.getElementById('zenN');
-    if (n) n.textContent = (state.zenIdx + 1) + ' / ' + list.length;
-    // 换段回到顶部：否则上一段滚到底，新段会从中间开始，开头那句永远看不到
-    var stage = document.getElementById('zenStage');
-    if (stage) stage.scrollTop = 0;
-  }
-  function closeZen() {
-    var v = document.getElementById('zenView');
-    if (!v || v.hidden) return;
-    v.hidden = true;
-    document.body.classList.remove('zen-locked');
-    if (zenKey) { window.removeEventListener('keydown', zenKey); zenKey = null; }
-  }
-  function openZen() {
-    var list = state.qList || [];
-    if (!list.length) return;
-    var v = document.getElementById('zenView');
-    if (!v) {
-      v = document.createElement('div');
-      v.className = 'zen'; v.id = 'zenView'; v.hidden = true;
-      v.innerHTML =
-        '<div class="zen-top"><span class="zen-title">沉浸阅读</span>' +
-          '<span class="zen-n" id="zenN"></span>' +
-          '<button class="zen-close" id="zenClose" type="button">关闭 Esc</button></div>' +
-        '<div class="zen-stage" id="zenStage"><article class="zen-card" id="zenCard"></article></div>' +
-        '<div class="zen-bot"><button class="zen-prev" type="button">← 上一段</button>' +
-          '<span class="zen-hint">← → 翻页 · 手机左右滑</span>' +
-          '<button class="zen-next" type="button">下一段 →</button></div>';
-      document.body.appendChild(v);
-      v.addEventListener('click', function (e) {
-        if (e.target.closest('#zenClose')) { closeZen(); return; }
-        if (e.target.closest('.zen-prev')) { showZen(state.zenIdx - 1); return; }
-        if (e.target.closest('.zen-next')) { showZen(state.zenIdx + 1); return; }
-        if (e.target === v) closeZen();
-      });
-      var stage = document.getElementById('zenStage');
-      var x0 = null;
-      stage.addEventListener('touchstart', function (e) {
-        x0 = e.changedTouches[0].clientX;
-      }, { passive: true });
-      stage.addEventListener('touchend', function (e) {
-        if (x0 == null) return;
-        var dx = e.changedTouches[0].clientX - x0;
-        if (Math.abs(dx) > 60) showZen(state.zenIdx + (dx < 0 ? 1 : -1));
-        x0 = null;
-      }, { passive: true });
-    }
-    v.hidden = false;
-    document.body.classList.add('zen-locked');
-    showZen(state.zenIdx || 0);
-    if (!zenKey) {
-      zenKey = function (e) {
-        if (e.key === 'Escape') { closeZen(); return; }
-        if (e.key === 'ArrowLeft') { e.preventDefault(); showZen(state.zenIdx - 1); }
-        if (e.key === 'ArrowRight') { e.preventDefault(); showZen(state.zenIdx + 1); }
-      };
-      window.addEventListener('keydown', zenKey);
-    }
-  }
-
-  /* ---------- 问答档案 ----------
-     把散在各场摘录里的 SC 集中成一页：观众那条是提问，她的回应是回答。
-     昵称沿用摘录里已有的写法，不额外暴露账号信息。 */
-  function qaCard(q) {
-    return '<article class="qa-item" id="qa-' + q.id + '">' +
-      '<div class="qa-side">' +
-        '<span class="tag"' + tagStyle(q.tag) + '>' + esc(q.tag) + '</span>' +
-        '<a class="qa-when" href="#/archive/' + q.s + '?t=' + encodeURIComponent(q.t) + '">' +
-          esc(q.date.replace('-', '.')) + '<i>' + esc(q.t) + '</i></a>' +
-      '</div>' +
-      '<div class="qa-main">' +
-        '<div class="qa-q"><span class="qa-who">' + esc(q.sc.name || '观众') + '</span>' +
-          '<p>' + esc(q.sc.text) + '</p></div>' +
-        '<div class="qa-a">' +
-          '<p class="jp">' + esc(q.jp) + '</p>' +
-          '<p class="zh">' + esc(q.zh) + '</p>' +
-        '</div>' +
-        '<a class="qa-src" href="#/quotes?focus=' + encodeURIComponent(q.id) + '">在摘录中查看 →</a>' +
-      '</div>' +
-    '</article>';
-  }
-
-  function paintQA() {
-    var box = document.getElementById('qaList');
-    if (!box) return;
-    var all = D.quotes.filter(function (q) { return q.sc; });
-    var html = '';
-    if (state.qaMode === 'tag') {
-      var groups = {};
-      all.forEach(function (q) { (groups[q.tag] = groups[q.tag] || []).push(q); });
-      var keys = Object.keys(groups).sort(function (a, b) {
-        return (groups[b].length - groups[a].length) || a.localeCompare(b, 'zh');
-      });
-      html = keys.map(function (k) {
-        return '<section class="qa-group"><h3>' + esc(k) + '<span>' + groups[k].length + ' 问</span></h3>' +
-          groups[k].map(qaCard).join('') + '</section>';
-      }).join('');
-    } else {
-      var sorted = all.slice().sort(function (a, b) {
-        return b.date.localeCompare(a.date) || hmsSec(b.t) - hmsSec(a.t);
-      });
-      html = sorted.map(qaCard).join('');
-    }
-    box.innerHTML = html || '<div class="empty">还没有收录带 SC 的摘录。</div>';
-  }
-
-  function renderQA() {
-    var tok = pageTok;
-    if (!AQ.rows) {   // 问答就是带 SC 的摘录，数据在 quotes.json
-      loadingPage('QUESTIONS & ANSWERS', '问答', '正在载入摘录…');
-      loadQuotes().then(function () {
-        if (tok === pageTok) renderQA();
-      }).catch(function () {
-        if (tok === pageTok) failPage('问答数据没能加载，请刷新重试。');
-      });
-      return;
-    }
-    var all = D.quotes.filter(function (q) { return q.sc; });
-    var names = {}, tags = {};
-    all.forEach(function (q) {
-      if (q.sc.name) names[q.sc.name] = 1;
-      tags[q.tag] = 1;
-    });
-    var focusId = parseHash().q.q || '';
-    if (focusId) state.qaMode = 'time';
-    app.innerHTML =
-      '<section class="hero hero-sm">' +
-        '<div class="hero-copy">' +
-          '<div class="kicker">QUESTIONS & ANSWERS</div>' +
-          '<h1>问答<span class="thin">，</span><span class="accent">' + all.length + '</span> 组</h1>' +
-          '<p class="lead">观众在 SC 里问了什么，她又是怎么答的。' +
-          '来自 ' + Object.keys(names).length + ' 位观众、' + Object.keys(tags).length +
-          ' 个话题；提问照原文引用，她的回答一字未改。</p>' +
-        '</div>' +
-      '</section>' +
-      '<div class="filters" id="qaModes">' +
-        '<button class="chip' + (state.qaMode === 'tag' ? ' on' : '') + '" data-m="tag">按话题</button>' +
-        '<button class="chip' + (state.qaMode === 'time' ? ' on' : '') + '" data-m="time">按时间</button>' +
-      '</div>' +
-      '<div class="qa-list" id="qaList"></div>';
-    document.getElementById('qaModes').addEventListener('click', function (e) {
-      var b = e.target.closest('.chip');
-      if (!b) return;
-      state.qaMode = b.getAttribute('data-m');
-      document.querySelectorAll('#qaModes .chip').forEach(function (c) {
-        c.classList.toggle('on', c.getAttribute('data-m') === state.qaMode);
-      });
-      paintQA();
-    });
-    paintQA();
-    if (focusId) {
-      requestAnimationFrame(function () {
-        var el = document.getElementById('qa-' + focusId);
-        if (el) { el.classList.add('hit'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-      });
-    }
-    setFoot();
-  }
-
   /* ---------- 统一时间线 ----------
      日记、动态、摘录、问答按日期铺在一根竖轴上：想看「这段时间她经历了什么」，
      不用在几个栏目之间来回切。每条都带回到原页面的链接。 */
@@ -1088,7 +891,7 @@
     D.quotes.forEach(function (q) {
       push(q.date, {
         kind: q.sc ? 'qa' : 'quote', t: q.t, jp: q.jp, zh: q.zh, tag: q.tag,
-        id: q.id, sc: q.sc, s: q.s
+        id: q.id, ref: quoteRef(q), s: q.s
       });
     });
     var days = Object.keys(byDay).sort().reverse();
@@ -1109,15 +912,17 @@
       } else if (it.kind === 'dyn') {
         body = '<p class="tl-text">' + esc(clip(it.zh || it.jp, 180)) + '</p>';
       } else {
-        var head = it.sc
-          ? '<div class="tl-q"><b>' + esc(it.sc.name || '观众') + '</b>' + esc(clip(it.sc.text, 90)) + '</div>'
+        var r = it.ref;
+        var head = r
+          ? '<div class="tl-q"><b>' + esc(r.name || '观众') + '</b>' +
+            (r.kind === 'dm' ? '<span class="tl-dm">弹幕</span>' : '') +
+            esc(clip(r.text, 90)) + '</div>'
           : '';
         body = head + '<p class="tl-jp">' + esc(clip(it.jp, 130)) + '</p>' +
           '<p class="tl-text">' + esc(clip(it.zh, 170)) + '</p>';
       }
       var href = it.kind === 'diary' ? '#/diary/' + encodeURIComponent(it.key)
         : it.kind === 'dyn' ? it.url
-        : it.kind === 'qa' ? '#/qa?q=' + encodeURIComponent(it.id)
         : '#/quotes?focus=' + encodeURIComponent(it.id);
       var external = it.kind === 'dyn' ? ' target="_blank" rel="noopener"' : '';
       return '<article class="tl-row kind-' + it.kind + '">' +
@@ -1191,9 +996,13 @@
     var focusQ = focusId ? D.quotes.filter(function (x) { return x.id === focusId; })[0] : null;
     if (focusQ) { state.tag = '全部'; state.qs = 'all'; }
     var tags = ['全部'];
-    D.quotes.forEach(function (q) { if (tags.indexOf(q.tag) < 0) tags.push(q.tag); });
     var counts = {};
-    D.quotes.forEach(function (q) { counts[q.tag] = (counts[q.tag] || 0) + 1; });
+    D.quotes.forEach(function (q) {
+      qTags(q).forEach(function (t) {
+        if (tags.indexOf(t) < 0) tags.push(t);
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    });
     // 标签会随内容增长，按条数降序排（同数按名称），「全部」固定首位
     tags = ['全部'].concat(tags.slice(1).sort(function (a, b) {
       return (counts[b] - counts[a]) || a.localeCompare(b, 'zh');
@@ -1223,7 +1032,6 @@
           '<h1>摘录<span class="thin">，</span><span class="accent">' + D.meta.quoteCount + '</span> 段</h1>' +
           '<p class="lead">从 ' + num(D.meta.total) + ' 条记录里挑出的 ' + D.meta.quoteCount + ' 段，' +
           '中日对照，按话题分类。每段都标出引出它的那条 SC，她的话原样保留，措辞不做润色。</p>' +
-          '<button class="zen-open" id="zenOpen" type="button">沉浸阅读 <span>一次一段，左右翻页</span></button>' +
         '</div>' +
       '</section>' +
       '<div class="filters" id="filters">' + chips + '</div>' +
@@ -1250,9 +1058,9 @@
       renderQuoteList(true);
     });
     renderQuoteList(true);
-    document.getElementById('zenOpen').addEventListener('click', openZen);
     if (focusQ) {
       state.qShown = Math.max(QBATCH, D.quotes.indexOf(focusQ) + 1);
+      state.qCollapsed[focusQ.id] = false;   // 深链进来先展开目标，否则只能看到标题
       renderQuoteList(false);
       // route() 末尾会把页面滚回顶部，等下一帧再落到目标摘录上
       requestAnimationFrame(function () {
@@ -1263,33 +1071,59 @@
     setFoot();
   }
 
+  // 摘录的引用块：老条目只有 sc，新条目可能是 dm（弹幕），一条只带一种
+  function quoteRef(q) {
+    if (q.sc) return { kind: 'sc', name: q.sc.name || '', text: q.sc.text || '' };
+    if (q.dm) return { kind: 'dm', name: q.dm.name || '', text: q.dm.text || '' };
+    return null;
+  }
+  function refBlock(q) {
+    var r = quoteRef(q);
+    if (!r) return '';
+    var dm = r.kind === 'dm';
+    return '<div class="qsc' + (dm ? ' qdm' : '') + '">' +
+      (r.name || dm ? '<b>' + esc(r.name || '观众') + (dm ? '<span class="qk">弹幕</span>' : '') + '</b>' : '') +
+      '<p>' + esc(r.text) + '</p>' +
+    '</div>';
+  }
+
   function quoteCard(q) {
-    // 观众那条（SC）作为被引用的评论放在上面，她的话缩进成跟帖；
-    // 没有 SC 的段落直接就是她自己的讲述，不缩进。
-    var sc = q.sc
-      ? '<div class="qsc">' +
-          (q.sc.name ? '<b>' + esc(q.sc.name) + '</b>' : '') +
-          '<p>' + esc(q.sc.text) + '</p>' +
-        '</div>'
-      : '';
-    return '<article class="quote" id="' + q.id + '">' +
-      '<div class="qside">' +
-        '<span class="tag"' + tagStyle(q.tag) + '>' + esc(q.tag) + '</span>' +
-        '<a class="qtime" href="#/archive/' + q.s + '?t=' + encodeURIComponent(q.t) + '">' +
-          esc(q.date.replace('-', '.')) + '<i>' + esc(q.t) + '</i>' +
-        '</a>' +
-      '</div>' +
-      '<div class="qbody">' +
-        sc +
-        '<div class="qreply' + (q.sc ? ' on' : '') + '">' +
-          '<p class="jp">' + esc(q.jp) + '</p>' +
-          '<p class="zh">' + esc(q.zh) + '</p>' +
+    // 一条摘录 = 讲同一件事的一组逐字稿条目，正文直接引用逐字稿，
+    // 和档案页共用同一份数据。SC / 弹幕作为被引用评论放在块头，校勘说明放块尾。
+    var ref = quoteRef(q);
+    var sc = refBlock(q);
+    var lines = q.lines || [{ t: q.t, jp: q.jp || '', zh: q.zh || '' }];
+    var back = '#/archive/' + q.s + '?t=' + encodeURIComponent(q.t);
+    var posts = lines.map(function (l) {
+      var href = '#/archive/' + q.s + '?t=' + encodeURIComponent(l.t || q.t);
+      return '<div class="qpost">' +
+        '<a class="qt" href="' + href + '" title="在原稿中定位">' + esc(l.t) + '</a>' +
+        '<div class="qpc">' +
+          '<p class="jp">' + esc(l.jp) + '</p>' +
+          (l.zh ? '<p class="zh">' + esc(l.zh) + '</p>' : '') +
         '</div>' +
-        (q.note ? '<p class="note">' + esc(q.note) + '</p>' : '') +
-      '</div>' +
+      '</div>';
+    }).join('');
+    // 标题行：圆角标签 + 简短概括；日期放右端。每句自带时间戳，左侧不再重复一个。
+    // 默认收起，只留标题行；state.qCollapsed[id] === false 表示这条被手动展开。
+    var folded = state.qCollapsed[q.id] !== false;
+    var head = '<div class="qhead">' +
+      qTags(q).map(function (t) { return '<span class="tag"' + tagStyle(t) + '>' + esc(t) + '</span>'; }).join('') +
+      '<h3 class="qtitle">' + esc(q.title || q.tag) + '</h3>' +
+      '<a class="qdate" href="' + back + '">' + esc(q.date.replace('-', '.')) + '</a>' +
       '<div class="qacts">' +
         '<button class="copy" data-id="' + q.id + '">复制</button>' +
         '<button class="mkcard" data-card="' + q.id + '" title="生成图片卡片">卡片</button>' +
+        '<button class="qfold" data-fold="' + q.id + '" aria-expanded="' + (folded ? 'false' : 'true') +
+          '" title="' + (folded ? '展开摘录' : '收起摘录') + '">' + (folded ? '展开' : '收起') + '</button>' +
+      '</div>' +
+    '</div>';
+    return '<article class="quote' + (folded ? ' collapsed' : '') + '" id="' + q.id + '">' +
+      head +
+      '<div class="qbody">' +
+        sc +
+        '<div class="qthread' + (ref ? ' on' : '') + '">' + posts + '</div>' +
+        (q.note ? '<p class="note">' + esc(q.note) + '</p>' : '') +
       '</div>' +
     '</article>';
   }
@@ -1318,8 +1152,9 @@
     var jpL = wrapLines(m, q.jp, TW);
     m.font = '400 26px "Noto Sans JP", "Microsoft YaHei", sans-serif';
     var zhL = wrapLines(m, q.zh, TW);
-    var scL = q.sc ? wrapLines(m, q.sc.text, TW - 28) : [];
-    var H = 250 + jpL.length * 53 + zhL.length * 40 + (q.sc ? scL.length * 36 + 70 : 0) + 120;
+    var ref = quoteRef(q);
+    var refL = ref ? wrapLines(m, ref.text, TW - 28) : [];
+    var H = 250 + jpL.length * 53 + zhL.length * 40 + (ref ? refL.length * 36 + 70 : 0) + 120;
     H = Math.max(760, Math.min(2400, H));
 
     var c = document.createElement('canvas');
@@ -1342,16 +1177,17 @@
       x.fillText(q.date.replace('-', '.') + '  ' + q.t + '   ·   ' + q.tag, PAD, 94);
 
       var y = 148;
-      if (q.sc) {
-        x.fillStyle = 'rgba(255,255,255,.045)';
-        x.fillRect(PAD - 18, y - 16, TW + 36, scL.length * 36 + 66);
-        x.fillStyle = '#79a9d6';
+      if (ref) {
+        var isDm = ref.kind === 'dm';
+        x.fillStyle = isDm ? 'rgba(150,195,240,.055)' : 'rgba(255,255,255,.045)';
+        x.fillRect(PAD - 18, y - 16, TW + 36, refL.length * 36 + 66);
+        x.fillStyle = isDm ? '#8fbde4' : '#79a9d6';
         x.font = '600 19px "Microsoft YaHei", sans-serif';
-        x.fillText(q.sc.name || '观众', PAD, y);
+        x.fillText((isDm ? '弹幕 · ' : '') + (ref.name || '观众'), PAD, y);
         y += 32;
         x.fillStyle = '#c9c3be';
         x.font = '400 22px "Microsoft YaHei", sans-serif';
-        scL.forEach(function (line) { x.fillText(line, PAD, y); y += 36; });
+        refL.forEach(function (line) { x.fillText(line, PAD, y); y += 36; });
         y += 46;
       }
       x.fillStyle = '#f5efe9';
@@ -1387,9 +1223,24 @@
     fill();
     var img = new Image();
     img.onload = function () {
-      x.globalAlpha = 0.18;
-      x.drawImage(img, 0, 0, W, H);
-      x.globalAlpha = 1;
+      // 底图是 16:9 横图，卡片是竖版：按宽度等比缩放、顶部对齐。
+      // 直接用 drawImage(img, 0, 0, W, H) 铺满会把横图横向挤扁。
+      var ih = Math.round(W * img.height / img.width);
+      var layer = document.createElement('canvas');
+      layer.width = W; layer.height = ih;
+      var lx = layer.getContext('2d');
+      lx.globalAlpha = 0.18;
+      lx.drawImage(img, 0, 0, W, ih);
+      // 下沿淡出到透明，叠在卡片底色上不会留一条硬边
+      lx.globalAlpha = 1;
+      lx.globalCompositeOperation = 'destination-out';
+      var fadeH = Math.min(160, ih);
+      var fade = lx.createLinearGradient(0, ih - fadeH, 0, ih);
+      fade.addColorStop(0, 'rgba(0,0,0,0)');
+      fade.addColorStop(1, 'rgba(0,0,0,1)');
+      lx.fillStyle = fade;
+      lx.fillRect(0, ih - fadeH, W, fadeH);
+      x.drawImage(layer, 0, 0);
       content(); save();
     };
     img.onerror = function () { content(); save(); };
@@ -1400,7 +1251,7 @@
   function renderQuoteList(reset) {
     if (reset) state.qShown = QBATCH;
     var list = D.quotes.filter(function (q) {
-      return (state.tag === '全部' || q.tag === state.tag) &&
+      return (state.tag === '全部' || qTags(q).indexOf(state.tag) >= 0) &&
              (state.qs === 'all' || String(q.s) === state.qs);
     });
     state.qList = list;
@@ -1425,6 +1276,17 @@
   }
 
   app.addEventListener('click', function (e) {
+    var foldBtn = e.target.closest('.qfold');
+    if (foldBtn) {
+      var quoteEl = foldBtn.closest('.quote');
+      var folded = !quoteEl.classList.contains('collapsed');
+      quoteEl.classList.toggle('collapsed', folded);
+      state.qCollapsed[foldBtn.getAttribute('data-fold')] = folded;
+      foldBtn.textContent = folded ? '展开' : '收起';
+      foldBtn.setAttribute('aria-expanded', folded ? 'false' : 'true');
+      foldBtn.setAttribute('title', folded ? '展开摘录' : '收起摘录');
+      return;
+    }
     var cardBtn = e.target.closest('.mkcard');
     if (cardBtn) {
       var cq = D.quotes.filter(function (x) { return x.id === cardBtn.getAttribute('data-card'); })[0];
@@ -1435,8 +1297,9 @@
     if (!btn) return;
     var q = D.quotes.filter(function (x) { return x.id === btn.getAttribute('data-id'); })[0];
     if (!q) return;
-    var head = q.sc
-      ? '「' + (q.sc.name ? q.sc.name + '：' : '') + q.sc.text + '」\n'
+    var cr = quoteRef(q);
+    var head = cr
+      ? (cr.kind === 'dm' ? '【弹幕】' : '') + '「' + (cr.name ? cr.name + '：' : '') + cr.text + '」\n'
       : '';
     var text = head + q.zh + '\n' + q.jp + '\n—— ' + D.meta.streamer + ' ' + q.date + ' ' + q.t;
     var done = function () { btn.textContent = '已复制'; setTimeout(function () { btn.textContent = '复制'; }, 1400); };
@@ -2321,122 +2184,6 @@
     syncTimelineRows();
   }
 
-  /* ---------- 主题索引 ----------
-     跨全库把「反复聊到的东西」聚成入口：宝可梦、chiikawa、FF、正月巫女……
-     命中规则是一组中日关键词，对摘录与逐字稿正文做子串匹配；关键词写在前端，
-     改主题不必重跑数据管线。点进主题看命中的摘录与逐字稿片段。 */
-  var THEMES = D.themes || [];
-  // 摘录要等 quotes.json；逐字稿要等全库分片。没就绪时由调用方先占位、
-  // 加载完再补（主题页是用户主动点进来的，多等这一下可以接受）。
-  function themeHits(th) {
-    var quotes = (AQ.rows || []).filter(function (q) {
-      var s = q.jp + ' ' + q.zh + ' ' + (q.note || '');
-      return th.kw.some(function (w) { return s.indexOf(w) >= 0; });
-    });
-    var recs = null;
-    if (RC.all) {
-      recs = RC.all.filter(function (r) {
-        var s = r.jp + ' ' + (r.zh || '');
-        return th.kw.some(function (w) { return s.indexOf(w) >= 0; });
-      });
-    }
-    return { quotes: quotes, recs: recs };
-  }
-
-  function renderTopics(id) {
-    var one = id ? THEMES.filter(function (t) { return t.id === id; })[0] : null;
-    if (id && !one) { location.replace('#/topics'); return; }
-    if (one) {
-      // 列表页只读构建期计数，详情页才需要摘录与逐字稿
-      var tok = pageTok;
-      if (!AQ.rows) {
-        loadingPage('SUBJECT · ' + esc(one.icon), esc(one.name), '正在载入摘录…');
-        loadQuotes().then(function () {
-          if (tok === pageTok) renderTopics(id);
-        }).catch(function () {
-          if (tok === pageTok) failPage('这个主题的摘录没能加载，请刷新重试。');
-        });
-        return;
-      }
-      renderTopicPage(one); return;
-    }
-
-    var cards = THEMES.map(function (th) {
-      return '<a class="tcard rv" href="#/topics/' + th.id + '" style="--thc:' + th.color + '">' +
-        '<span class="tc-ico">' + th.icon + '</span>' +
-        '<div class="tc-main"><h3>' + esc(th.name) + '</h3><p>' + esc(th.desc) + '</p></div>' +
-        '<div class="tc-n"><b>' + (th.quoteCount || 0) + '</b> 段摘录<span>· ' +
-          (th.recCount || 0) + ' 条记录</span></div>' +
-        '<span class="tc-go">进入 →</span></a>';
-    }).join('');
-
-    app.innerHTML =
-      '<section class="hero hero-sm">' +
-        '<div class="hero-copy">' +
-          '<div class="kicker">RECURRING SUBJECTS</div>' +
-          '<h1>反复聊到的<span class="accent">那些东西</span></h1>' +
-          '<p class="lead">从 ' + num(D.meta.total) + ' 条记录里按关键词聚出的 ' + THEMES.length +
-          ' 个主题。每个主题下是命中的摘录与原话片段，点时间可回到整场逐字稿。</p>' +
-        '</div>' +
-      '</section>' +
-      '<div class="tgrid">' + cards + '</div>';
-    playReveal();
-    setFoot();
-  }
-
-  function renderTopicPage(th) {
-    var h = themeHits(th);
-    var ready = !!h.recs;
-    // 逐字稿片段按场次倒序，每场最多取 6 条，避免某个高频词刷屏
-    var perSess = {};
-    var picked = [];
-    (h.recs || []).slice().reverse().forEach(function (r) {
-      perSess[r.s] = perSess[r.s] || 0;
-      if (perSess[r.s] < 6) { picked.push(r); perSess[r.s]++; }
-    });
-    picked.sort(function (a, b) {
-      return (sess(b.s).dateLong + b.t).localeCompare(sess(a.s).dateLong + a.t);
-    });
-
-    var qhtml = h.quotes.map(quoteCard).join('') ||
-      '<div class="empty">这个主题还没有单独的摘录。</div>';
-    var rhtml = ready
-      ? (picked.map(function (r) { return rowHTML(r, '', true); }).join('') ||
-         '<div class="empty">没有命中的逐字稿片段。</div>')
-      : '<div class="empty td-loading">正在载入逐字稿…</div>';
-
-    app.innerHTML =
-      '<section class="hero hero-sm">' +
-        '<div class="hero-copy tdetail" style="--thc:' + th.color + '">' +
-          '<a class="back" href="#/topics">← 全部主题</a>' +
-          '<div class="kicker">SUBJECT · ' + th.icon + '</div>' +
-          '<h1>' + esc(th.name) + '</h1>' +
-          '<p class="lead">' + esc(th.desc) + '</p>' +
-          '<div class="td-stat"><b>' + h.quotes.length + '</b> 段摘录 <i>·</i> <b data-tdrec>' +
-            (ready ? h.recs.length : '…') + '</b> 条原话</div>' +
-        '</div>' +
-      '</section>' +
-      '<section class="sec">' +
-        '<div class="sec-head"><h2><i>01</i>相关摘录</h2><span class="more">' + h.quotes.length + ' 段</span></div>' +
-        '<div class="qlist">' + qhtml + '</div>' +
-      '</section>' +
-      '<section class="sec">' +
-        '<div class="sec-head"><h2><i>02</i>原话片段</h2><span class="more">每场最多 6 条</span></div>' +
-        '<div class="trlist t-trlist">' + rhtml + '</div>' +
-      '</section>';
-    setFoot();
-
-    // 分片没齐就先出摘录那半边，逐字稿部分等全库到位后重渲染本页
-    if (!ready) {
-      loadAll(function (done, n) {
-        var el = app.querySelector('[data-tdrec]');
-        if (el) el.textContent = '…' + done + '/' + n;
-      }).then(function () {
-        if (location.hash.indexOf('#/topics/' + th.id) === 0) renderTopicPage(th);
-      });
-    }
-  }
-
   /* ---------- about ---------- */
   function renderAbout() {
     var diaryN = D.meta.diaryCount || (D.diary ? D.diary.length : 0);
@@ -2694,6 +2441,8 @@
   'use strict';
   var D = window.DATA;
   var RC = window.LARC;   // 逐字稿分片缓存，由主模块持有
+  // 与主模块各在一个 IIFE，这边也要有一份多 tag 兼容函数
+  function qTags(q) { return q.tags && q.tags.length ? q.tags : [q.tag].filter(Boolean); }
   var openBtn = document.getElementById('searchOpen');
   var dlg = document.getElementById('searchDlg');
   var mask = document.getElementById('searchMask');
@@ -2730,12 +2479,12 @@
   function sessOf(i) { return D.sessions[i] || { date: '', dateLong: '', week: '' }; }
   function dText(d) { return [d.title, d.tagline, d.summary, (d.body || []).join(' ')].join(' '); }
 
-  // 搜索语法：tag:话题  date:11-24  sc:关键词  jp:日文  zh:译文，
+  // 搜索语法：tag:话题  date:11-24  sc:关键词  dm:关键词  jp:日文  zh:译文，
   // 可以混用，剩下的词仍按全文检索。没有前缀时行为和以前完全一样。
   function parseQuery(raw) {
-    var f = { tag: '', date: '', sc: '', jp: '', zh: '' }, words = [];
+    var f = { tag: '', date: '', sc: '', dm: '', jp: '', zh: '' }, words = [];
     String(raw || '').trim().split(/\s+/).forEach(function (tok) {
-      var m = /^(tag|date|sc|jp|zh):(.+)$/i.exec(tok);
+      var m = /^(tag|date|sc|dm|jp|zh):(.+)$/i.exec(tok);
       if (m) f[m[1].toLowerCase()] = m[2];
       else if (tok) words.push(tok);
     });
@@ -2751,7 +2500,7 @@
     ctx = ctx || parseQuery(q);
     var F = ctx.f, ql = ctx.text.toLowerCase(), term = ctx.text;
     var groups = [], recTotal = 0;
-    var quoteOnly = !!(F.tag || F.sc);   // tag / sc 是摘录专属字段
+    var quoteOnly = !!(F.tag || F.sc || F.dm);   // tag / sc / dm 是摘录专属字段
 
     var recPending = false;
     if (!quoteOnly) {
@@ -2785,12 +2534,15 @@
     if (!RC.quotesReady()) quotePending = !RC.quotesFailed();
     else D.quotes.forEach(function (x) {
       var scText = x.sc ? (x.sc.name + ' ' + x.sc.text) : '';
-      if (F.tag && x.tag.toLowerCase().indexOf(F.tag.toLowerCase()) < 0) return;
+      var dmText = x.dm ? (x.dm.name + ' ' + x.dm.text) : '';
+      var refText = scText + ' ' + dmText;
+      if (F.tag && !qTags(x).some(function (t) { return t.toLowerCase().indexOf(F.tag.toLowerCase()) >= 0; })) return;
       if (F.date && x.date.indexOf(F.date) < 0) return;
       if (F.sc && scText.toLowerCase().indexOf(F.sc.toLowerCase()) < 0) return;
+      if (F.dm && dmText.toLowerCase().indexOf(F.dm.toLowerCase()) < 0) return;
       if (F.jp && !has(x.jp, F.jp)) return;
       if (F.zh && !has(x.zh, F.zh)) return;
-      if (ql && !has(scText + ' ' + x.jp + ' ' + x.zh + ' ' + x.note + ' ' + x.tag, ql)) return;
+      if (ql && !has(refText + ' ' + x.jp + ' ' + x.zh + ' ' + x.note + ' ' + qTags(x).join(' '), ql)) return;
       qTotal++;
       if (qRows.length < LIMIT.quote) {
         var qmain = has(x.zh, term) ? x.zh : (has(x.jp, term) ? x.jp : x.zh);
