@@ -27,9 +27,9 @@ npm run editor     # 在 live-archive 根目录
 
 1. `python tools/export.py`，把新场次写进 `site/data/sessions/`。
 2. `npm run editor`；左栏选场次。手机端刚采集完的话，先在上下文抽屉点「⇣ 拉取手机库」，把新 SC / 弹幕追加到本机 DB（手机需在线）。
-3. 勾选逐字稿行生成摘录，引用块可选 **SC 或弹幕**（二选一），填 title / tag / note，保存。
-4. 点「重建站点」（export → export_subs → gen_data → vite build）。
-5. 日记仍手写 `site/data/diary.json`，编辑器目前不管日记。
+3. 勾选逐字稿行生成摘录，引用块可选 **SC 或弹幕**（二选一），填 title / tag / note，保存。保存摘录只写 `quotes.json`；行内铅笔只写 `overrides.json`——**编辑器不会直接改 `site/data/sessions/*.json`**，只有点「重建站点」时 `export.py` 才把 overrides 套进 sessions。
+4. 点「重建站点」（export → export_subs → gen_data → vite build）。只跑 `npm run build` 不会套用新的 overrides。
+5. 日记仍手写 `site/data/diary.json`，编辑器目前不管日记；时间线由 diary / quotes / dynamics 自动生成，没有独立文件。
 
 ---
 

@@ -133,7 +133,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 | `dist/` | Vite | **不能**，生成物 |
 | `tools/fixes_data.json` / `tools/asr_fixes.py` | 编辑器 / 人工 | 能；全局修正，下次 export 生效 |
 
-- **`npm run build` 只跑 gen_data + Vite，不跑 export**。在编辑器里改的 `overrides.json` 必须先 `export.py`（或点编辑器「重建站点」）才会进 sessions 和 dist；只 build 的话，页面仍是旧译文。
+- **`npm run build` 只跑 gen_data + Vite，不跑 export**。在编辑器里改的 `overrides.json` 必须先 `export.py`（或点编辑器「重建站点」）才会进 sessions 和 dist；只 build 的话，页面仍是旧译文。**编辑器保存摘录 / 行内修改本身也不会写 sessions**：摘录写 `quotes.json`，行内修改写 `overrides.json`，sessions 只在 export 时被重写。
 - **`export.py` 会删文件**：`site/data/sessions/` 里存在、但这次从 DB 没生成出来的场次会被 `os.remove()`。`export_subs.py` 同理删 subs。「跳过」是时间窗过滤，不等于安全——被跳过且磁盘上有文件的场次也会进「移除」。
 - **会让 export 删除历史场次的配置改动**：`source.db` 指错（尤其旧的 C# 库）、`time_window` 改窄、`time_window_keep` 漏掉白天场、`session_gap_min` / `min_records` 改变导致场次文件名变化。动这些之前先 `export.py --dry-run`，确认「清掉 0」。
 - **编辑器「重建站点」= export → export_subs → gen_data → Vite**，同样有删除风险；DB 不稳时不要直接点，先手动 dry-run。
