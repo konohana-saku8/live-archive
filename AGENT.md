@@ -20,7 +20,8 @@ LiveTranslate 和 danmaku-it 都往这个库里写，live-archive 从里面读�
                              ▼
                      live-archive/tools/
                 export.py → site/data/sessions/*.json
-                （人工）  → site/data/diary.json · quotes.json
+                （编辑器 / 人工）→ site/data/quotes.json · diary.json
+                                  · overrides.json · tags.json
                 build.py  → dist/
                 publish.py→ git commit →（人工确认）→ push
                              ▼
@@ -45,6 +46,18 @@ LiveTranslate 和 danmaku-it 都往这个库里写，live-archive 从里面读�
 
 （`live-archive/config.toml` 里写的还是旧的 C# 库路径，已过期。）
 
+### 下播后的入口：编辑器
+
+`editor/` 是下播整理的主入口，但**它只读 `site/data/sessions/*.json`，不会自己从 DB 导出新场次**。所以顺序是：
+
+1. `python tools/export.py` 把新场次写进 `site/data/sessions/`，确认「清掉 0」。这一步不能省；只在编辑器里等，是等不到新场次的。
+2. `npm run editor`。左栏选场次；如果手机端刚采集完，先在上下文抽屉点「拉取手机库」，把新 SC / 弹幕追加到本机 DB（手机需在线；只追加，重复点不会翻倍）。
+3. 勾选逐字稿行生成摘录；引用块可以是 **SC 或弹幕二选一**，再写 title / tag / note。
+4. 改完点「重建站点」，或手动跑 `export.py → export_subs.py → gen_data.py → vite build`。
+5. 自查、提交；不 push，除非当场明确要求。
+
+编辑器写入 `site/data/quotes.json`（`session` / `sel` / `tags` / `title`）、`site/data/overrides.json`（逐行修正）和 `site/data/tags.json`；不会回写 DB。窗口图标是 `editor/icon.png`。
+
 ---
 
 ## 文档地图
@@ -59,6 +72,7 @@ LiveTranslate 和 danmaku-it 都往这个库里写，live-archive 从里面读�
 | [EXCERPT_RULES.md](docs/EXCERPT_RULES.md) | 摘录与引用规范（含意译不得冒充原文） | 挑摘录、引用她原话前 |
 | [CULTURE.md](docs/CULTURE.md) | 直播间梗、人物、称呼与文化背景 | 校人名 / 判断是不是玩梗 |
 | [FRONTEND.md](docs/FRONTEND.md) | 装饰图、性能、话题、搜索、日历、时间轴、各视图 | 改前端交互 |
+| [EDITOR-PROPOSAL.md](docs/EDITOR-PROPOSAL.md) | 本地编辑器：勾选逐字稿生成摘录、单行/全局修正、tag、SC/弹幕上下文 | 下播整理、改摘录或逐字稿前 |
 | [COLLECTORS.md](docs/COLLECTORS.md) | danmaku-it / LiveTranslate 启动与配置 | 开播、调采集或翻译 |
 | [WORKFLOW.md](docs/WORKFLOW.md) | 常规工作流与工作区恢复 | 下播整理、环境重建 |
 | [PITFALLS.md](docs/PITFALLS.md) | 12 个坑与自查判据 | 动库 / 导出 / 同步前 |

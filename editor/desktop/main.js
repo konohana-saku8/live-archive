@@ -17,7 +17,11 @@ if (!app || !process.versions.electron) {
 
 const PORT = Number(process.env.LC_EDITOR_PORT || 8765);
 const ROOT = path.resolve(__dirname, '..', '..');   // live-archive 根目录
+const ICON = path.join(ROOT, 'editor', 'icon.png'); // 站内 favicon 同款「火」图标
 let py = null;
+
+// Windows 任务栏按 AppUserModelID 归组；不设的话可能显示成 electron.exe 的图标。
+if (process.platform === 'win32') app.setAppUserModelId('com.hibane.live-archive.editor');
 
 // 后端固定用仓库里的 .venv：导出脚本（export.py 等）由 server.py 用
 // sys.executable 再拉起，这样重建时的依赖和手跑 python 完全一致。
@@ -84,6 +88,7 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: '#14110f',
     title: '火羽直播档案 · 编辑器',
+    icon: ICON,
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });

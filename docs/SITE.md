@@ -23,12 +23,19 @@ site/
   data/profile.json       主播名 / 标题 / 描述
   data/diary.json         直播日记（人工写，最新在最前）
   data/dynamics.json      B 站动态（export_dynamics.py 从 live-capture 导出，**禁止手改**）
-  data/quotes.json        摘录（人工挑，按 date + t 挂场次）
+  data/quotes.json        摘录（编辑器 / 人工挑，按 session + sel 或 date + t 挂场次）
+  data/tags.json          tag 注册表（编辑器写）
+  data/overrides.json     逐字稿单行覆盖（编辑器 / 人工写，含 orig / why）
   data/sessions/*.json    每场直播一份，脚本导出，**禁止手改**
   data/subs/*.json        双语字幕轨（进 git，随站点发布，按场次分文件）
+editor/                   本地编辑器（Electron 壳 + Python 后端 + 页面）
+  desktop/main.js         Electron 主进程：起后端、开窗、窗口图标 editor/icon.png
+  server.py               本地 HTTP 后端，只监听 127.0.0.1
+  index.html / app.js     编辑器界面与交互
 .build/                   构建前的数据暂存（gitignore，gen_data.py 生成）
 tools/
   common.py               配置、读库、切场、话题分类（TOPICS 关键词表）
+  overrides.py            逐行覆盖的读取与套用（export / export_subs 共用）
   export.py               db → site/data/sessions/
   export_dynamics.py      live-capture 的 dynamics 表 → site/data/dynamics.json（默认 ssh 只读手机库）
   gen_data.py             site/data → .build/：data.js、版本哈希、subs、静态资源
@@ -44,6 +51,10 @@ dist/                     构建产物，不入库，CI 重新生成
 
 ```bash
 cd D:/HibaneHinome/live-archive
+
+# 编辑器（下播整理入口；读 site/data，不会自动从 DB 导出新场次）
+npm run editor                            # 起 Electron 壳 + Python 后端
+npm run editor:install                    # 首次装 Electron
 
 # 导出（幂等：内容没变不落盘）
 python tools/export.py
@@ -134,17 +145,37 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 `quotes.json`（list）
 
 ```json
-{ "date": "11-10", "t": "01:00:21", "tag": "劝解",
-  "jp": "她的原话，一行一句",
-  "zh": "对应译文，行数对齐",
+{ "date": "11-22", "session": "2026-11-22_0011", "t": "00:18:27",
+  "sel": [{"i": 401, "t": "00:18:27"}, {"i": 402, "t": "00:18:30"}],
+  "tag": "劝解", "tags": ["劝解"],
+  "title": "想看的时候来看就好",
+  "jp": "选段原文快照", "zh": "对应译文快照",
   "note": "一句语境说明，不评价",
   "sc": { "name": "观众名", "text": "观众原文" } }
 ```
 
-- `jp/zh` 写她讲同一件事的那几句（可长），无需逐行对应逐字稿；`gen_data.py` 会按首句 / 末句在逐字稿里圈出同一主题段，生成 `lines:[{t,jp,zh}]` 作为页面正文——**摘录与逐字稿共用同一份数据**，源文件无需维护两次。源末句若把连续两三句并成一行，整行相似度会被稀释而截在半截；`topic_lines()` 会在结尾后 15 秒 / 6 行内找末句尾部小句或 `note` 里补记的原话补齐（`note` 里带引号的日语原话因此会被当锚点，别拿引号写泛泛注释）。
-- `t` 必须是真实时间戳，`build.py` 靠它把摘录挂到对应场次；挂不上会打印 `!! 找不到对应场次的摘录`
+- **编辑器保存的新条目**带 `session` + `sel`：`sel` 是逐字稿 records 的下标 + 时间戳，逐行精确引用；`jp/zh` 只是选段快照，`sel` 失效时用来兜底。正文仍以逐字稿为准，所以改 ASR 只改 `overrides.json` / `FIXES`，摘录自动跟着变。
+- **老条目没有 `sel`**：`jp/zh` 继续作为首末句锚点，由 `gen_data.topic_lines()` 按相似度圈段。新收摘录一律在编辑器里勾选，保存后就是 `sel`，不要手拼下标。
+- `sc` / `dm` **二选一**：`sc` 是醒目留言，`dm` 是普通弹幕（弹幕也可以作为摘录的引出引用）；两个字段不要同时写。`text` 放观众原文，`name` 按手机库 `uname`，没署名留空。
+- `title` 可选：编辑器里填；不填时 `gen_data.quote_title()` 从正文首句自动提炼。`tags` 是数组，`tag` 取第一个，供旧前端 / 旧数据兼容。
+- `t` 必须是真实时间戳，`build.py` 靠它把摘录挂到对应场次；有 `session` 时优先按场次定位。挂不上会打印 `!! 找不到对应场次的摘录`
 - `tag` **不设白名单**（2026-11-14 用户指定）：按当场内容自由命名。语源、习俗、文字、料理、游戏……遇到新类别就直接新造，2–4 字、名词性、同一类始终用同一个名字；已有标签（`人生` `劝解` `吐槽` `科普` `自嘲` `努力` 等）优先沿用保持连贯，别为单条造一次性标签。摘录页筛选项按条数排序、颜色按标签名自动分配，新增标签不需要改前端代码。
 
-### 当前规模（2026-11-10）
+`overrides.json`（dict，编辑器 / 人工写）
 
-13 场 / 8202 条记录 / 105 段摘录 / 13 篇日记。
+```json
+{ "2026-11-26_0014": {
+    "00:55:21#0": {
+      "jp": "修正后的原文", "zh": "修正后的译文",
+      "why": "为什么改", "at": "2026-11-26 15:22",
+      "orig": { "jp": "原导出文本", "zh": "原译文" } } } }
+```
+
+- 键是「场次文件名 + `HH:MM:SS#同秒序号`」；同秒多行必须带 `#n`，只用时间戳会串行。
+- 由 `tools/export.py` / `export_subs.py` 在 `asr_fixes` 之后套用，逐字稿、字幕、摘录一起生效；改回原样就等于撤销。
+
+`tags.json`（list，编辑器写）：tag 注册表，前台筛选仍按条数排序。
+
+### 当前规模（2026-11-26）
+
+30 场 / 20805 条记录 / 283 段摘录 / 30 篇日记。

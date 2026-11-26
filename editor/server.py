@@ -627,7 +627,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send({'quotes': out})
             elif path == '/api/ctx':
                 self._send(context((q.get('key') or [''])[0]))
-            elif path in ('/', '/index.html', '/app.js', '/style.css'):
+            elif path in ('/', '/index.html', '/app.js', '/style.css', '/icon.png'):
                 name = 'index.html' if path == '/' else path.lstrip('/')
                 fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
                 with open(fp, 'rb') as f:
@@ -635,7 +635,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html; charset=utf-8' if name.endswith('.html') else
                                  ('text/css; charset=utf-8' if name.endswith('.css') else
-                                  'application/javascript; charset=utf-8'))
+                                  ('image/png' if name.endswith('.png') else
+                                   'application/javascript; charset=utf-8')))
                 self.send_header('Content-Length', str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
