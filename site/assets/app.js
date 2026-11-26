@@ -186,7 +186,7 @@
   }
 
   var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false,
-    tlKind: 'all', learn: false, qCollapsed: {} };
+    tlKind: 'all', learn: false };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
@@ -1060,7 +1060,6 @@
     renderQuoteList(true);
     if (focusQ) {
       state.qShown = Math.max(QBATCH, D.quotes.indexOf(focusQ) + 1);
-      state.qCollapsed[focusQ.id] = false;   // 深链进来先展开目标，否则只能看到标题
       renderQuoteList(false);
       // route() 末尾会把页面滚回顶部，等下一帧再落到目标摘录上
       requestAnimationFrame(function () {
@@ -1105,8 +1104,6 @@
       '</div>';
     }).join('');
     // 标题行：圆角标签 + 简短概括；日期放右端。每句自带时间戳，左侧不再重复一个。
-    // 默认收起，只留标题行；state.qCollapsed[id] === false 表示这条被手动展开。
-    var folded = state.qCollapsed[q.id] !== false;
     var head = '<div class="qhead">' +
       qTags(q).map(function (t) { return '<span class="tag"' + tagStyle(t) + '>' + esc(t) + '</span>'; }).join('') +
       '<h3 class="qtitle">' + esc(q.title || q.tag) + '</h3>' +
@@ -1114,11 +1111,9 @@
       '<div class="qacts">' +
         '<button class="copy" data-id="' + q.id + '">复制</button>' +
         '<button class="mkcard" data-card="' + q.id + '" title="生成图片卡片">卡片</button>' +
-        '<button class="qfold" data-fold="' + q.id + '" aria-expanded="' + (folded ? 'false' : 'true') +
-          '" title="' + (folded ? '展开摘录' : '收起摘录') + '">' + (folded ? '展开' : '收起') + '</button>' +
       '</div>' +
     '</div>';
-    return '<article class="quote' + (folded ? ' collapsed' : '') + '" id="' + q.id + '">' +
+    return '<article class="quote" id="' + q.id + '">' +
       head +
       '<div class="qbody">' +
         sc +
@@ -1276,17 +1271,6 @@
   }
 
   app.addEventListener('click', function (e) {
-    var foldBtn = e.target.closest('.qfold');
-    if (foldBtn) {
-      var quoteEl = foldBtn.closest('.quote');
-      var folded = !quoteEl.classList.contains('collapsed');
-      quoteEl.classList.toggle('collapsed', folded);
-      state.qCollapsed[foldBtn.getAttribute('data-fold')] = folded;
-      foldBtn.textContent = folded ? '展开' : '收起';
-      foldBtn.setAttribute('aria-expanded', folded ? 'false' : 'true');
-      foldBtn.setAttribute('title', folded ? '展开摘录' : '收起摘录');
-      return;
-    }
     var cardBtn = e.target.closest('.mkcard');
     if (cardBtn) {
       var cq = D.quotes.filter(function (x) { return x.id === cardBtn.getAttribute('data-card'); })[0];

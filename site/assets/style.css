@@ -500,10 +500,6 @@ a.hl .hl-dot{
 }
 .qdate:hover{color:var(--fire-soft)}
 .qbody{min-width:0}
-/* 单条摘录可折叠：收起后只留标题行，按钮就地变成「展开」 */
-.quote.collapsed{padding-bottom:18px}
-.quote.collapsed .qhead{margin-bottom:0}
-.quote.collapsed .qbody{display:none}
 /* 摘录：观众那条 SC 当作被引用的评论，她的话缩进成跟帖 */
 .qsc{
   margin:0 0 13px;padding:10px 15px 11px;
