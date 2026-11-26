@@ -34,7 +34,19 @@
 
 **手动兜底**：不启动编辑器时，摘录仍可直接改 `site/data/quotes.json`（`jp/zh` 作锚点，或写 `sel` 精确选段），逐字稿修正写 `site/data/overrides.json`；链路与编辑器完全相同。
 
-**手动重译/回填**：只能改 `TranslationHistory` 的 `TranslatedText`，然后重新 export；不要在 sessions JSON 上手改（历史上 `865a499` 那次回填是直接改 JSON 的，属于例外，别照抄）。
+**手动重译/回填**：
+
+- 平时校逐字稿只改 `site/data/overrides.json`（编辑器行内铅笔），export 时套用，不动 DB。
+- 需要把**近期**的 overrides 回写 `TranslationHistory`：
+
+  ```bash
+  python tools/writeback_overrides.py --since 2026-11-13 --dry-run
+  python tools/writeback_overrides.py --since 2026-11-13
+  ```
+
+  默认同时写 `SourceText` + `TranslatedText`；只写译文加 `--translation-only`。写前自动备份到 `.data/backups/`，只改 `orig` 与当前库一致的条目，单事务写入。
+- 回写后 `overrides.json` **保留**作审计；再跑 `export.py` 时正文文本不变，但 `topics` / `ribbon` / `segs` 可能变——因为分类是按回写后的 `SourceText` 算的，这是预期。
+- 不要在 sessions JSON 上手改（历史上 `865a499` 那次回填是直接改 JSON 的，属于例外，别照抄）。
 
 ---
 

@@ -62,6 +62,11 @@ python tools/export.py --dry-run          # 先看会改什么，「清掉」必
 python tools/export_dynamics.py           # B 站动态：默认 ssh 只读手机 capture 库
 python tools/export_dynamics.py --db PATH # 改读本地 capture.db（通常为空，仅调试）
 
+# 把近期 overrides 回写 DB（默认原文+译文；写前自动备份到 .data/backups/）
+python tools/writeback_overrides.py --since 2026-11-13 --dry-run
+python tools/writeback_overrides.py --since 2026-11-13
+python tools/writeback_overrides.py --since 2026-11-13 --translation-only   # 只写译文
+
 # 构建 / 本地预览
 npm install                               # 首次或依赖变动后
 npm run dev                               # 开发模式：http://localhost:8799/（改 site/data 自动重产并刷新）
@@ -121,7 +126,7 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 
 | 路径 | 谁写 | 能手改吗 |
 |---|---|---|
-| `.data/translation_history.db` | LiveTranslate / danmaku-it / 编辑器「拉取手机库」 | 不直接手改；只读查询，靠外部备份 |
+| `.data/translation_history.db` | LiveTranslate / danmaku-it / 编辑器「拉取手机库」；回写用 `writeback_overrides.py` | 不直接手改；只读查询，靠外部备份 |
 | `site/data/sessions/*.json` | `tools/export.py` | **不能**。整份覆盖，且会删除库里切不出来的场次 |
 | `site/data/subs/*.json`、`subs/index.json` | `tools/export_subs.py` | **不能**。不在本次 index 里的场次会被删除 |
 | `site/data/quotes.json` | 编辑器 / 人工 | 能。编辑器保存时备份到 `.state/editor-backups/` |

@@ -57,7 +57,7 @@ LiveTranslate 和 danmaku-it 都往这个库里写，live-archive 从里面读�
 4. 改完点「重建站点」，或手动跑 `export.py → export_subs.py → gen_data.py → vite build`。
 5. 自查、提交；不 push，除非当场明确要求。
 
-编辑器写入 `site/data/quotes.json`（`session` / `sel` / `tags` / `title`）、`site/data/overrides.json`（逐行修正）和 `site/data/tags.json`；不会回写 DB。窗口图标是 `editor/icon.png`。
+编辑器写入 `site/data/quotes.json`（`session` / `sel` / `tags` / `title`）、`site/data/overrides.json`（逐行修正）和 `site/data/tags.json`；不会回写 DB。要把近期逐字稿修正写回 `TranslationHistory`，用 `python tools/writeback_overrides.py --since YYYY-MM-DD --dry-run`，确认后去掉 `--dry-run`（默认原文+译文，写前自动备份）。窗口图标是 `editor/icon.png`。
 
 ---
 

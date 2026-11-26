@@ -69,11 +69,11 @@ npm run editor     # 在 live-archive 根目录
 | `site/data/overrides.json` | 新增，逐字稿单行覆盖（含 `why` 与 `orig`）；行内铅笔与全库搜索替换都写这里 |
 | `tools/fixes_data.json` | 新增（编辑器创建），结构化全局修正 |
 | `site/data/sessions/*.json` | 不写，由 `export.py` 产出 |
-| `translation_history.db` | 不回写修正列；只有「拉取手机库」会**追加** SC / 弹幕（手机端只读） |
+| `translation_history.db` | 编辑器不写；只有「拉取手机库」会**追加** SC / 弹幕（手机端只读）。逐字稿回写用 CLI `tools/writeback_overrides.py`（手动、可 dry-run、写前备份） |
 
 ### 尚未做
 
-- 回写 DB 的修正列（`CorrectedSourceText` 等）：用户未拍板，暂不改库。
+- 回写 DB：已提供命令行 `tools/writeback_overrides.py`（`--since` + `--dry-run`，默认回写原文+译文，写前 SQLite 备份，保留 overrides 作审计）；编辑器内还没有按钮。
 - P1：重复摘录检测、草稿自动保存、撤销栈、快捷键。
 - P2：重建后自动跑自检；代码签名与安装包（目前只是 Electron 壳，没做 `electron-builder` 打包）。
 
