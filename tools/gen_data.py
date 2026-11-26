@@ -107,12 +107,22 @@ def _note_phrases(note):
     return [s for s in out if s]
 
 
-def _gap(t1, t2):
-    """两个 HH:MM[:SS] 的秒差。"""
-    def m(x):
-        p = [int(v) for v in x.split(':')[:2]]
-        return p[0] * 60 + p[1]
-    return m(t1) - m(t2)
+def _hms(t):
+    p = [int(v) for v in str(t).split(':')]
+    p += [0] * (3 - len(p))
+    return p[0] * 3600 + p[1] * 60 + p[2]
+
+
+def _session_rel(t, start):
+    """HH:MM[:SS] → 相对开播时刻的秒数；开播在下午/晚上时，零点后的时间 +86400。"""
+    a = _hms(t)
+    s = _hms(start or '00:00')
+    return a + 86400 if s >= 12 * 3600 and a < 12 * 3600 else a
+
+
+def _gap(t1, t2, start=''):
+    """同一场里两条记录的秒差，跨零点也不会算成负一大截。"""
+    return _session_rel(t1, start) - _session_rel(t2, start)
 
 
 _TITLE_FILLER = re.compile(
@@ -135,7 +145,7 @@ def quote_title(lines, tag=''):
     return tag or '摘录'
 
 
-def topic_lines(jp, zh, recs, anchor, note=''):
+def topic_lines(jp, zh, recs, anchor, note='', start=''):
     """一条摘录 = 讲同一件事的一组逐字稿条目。
 
     正文不再单独存校勘过的 jp/zh，而是按摘录的首尾句在逐字稿里圈出同一个主题段，
@@ -149,7 +159,8 @@ def topic_lines(jp, zh, recs, anchor, note=''):
     zh_lines = [l.strip() for l in zh.split('\n') if l.strip()]
     if not recs:
         return []
-    anchor_i = next((i for i, r in enumerate(recs) if r[0] >= anchor), 0)
+    anchor_sec = _session_rel(anchor, start)
+    anchor_i = next((i for i, r in enumerate(recs) if _session_rel(r[0], start) >= anchor_sec), 0)
     # 开头：锚点前 8 行内找首句（校勘过的句子未必逐字相同，取最相似的一行）
     start = anchor_i
     first = _norm_text(jp_lines[0] if jp_lines else '')
@@ -190,7 +201,7 @@ def topic_lines(jp, zh, recs, anchor, note=''):
     phrases.extend(_note_phrases(note))
     for phrase in phrases:
         for i in range(end + 1, min(len(recs), end + 7)):
-            if _gap(recs[i][0], recs[end][0]) > 15:
+            if _gap(recs[i][0], recs[end][0], start) > 15:
                 break
             if phrase in _norm_text(recs[i][1]) or phrase in _norm_text(recs[i][2]):
                 end = i
@@ -305,7 +316,7 @@ def collect(site_dir):
         # 正文与逐字稿共用一份数据，jp/zh 由 lines 拼出。
         lines = selected_lines(q.get('sel'), recs)
         if not lines:
-            lines = topic_lines(jp, zh, recs, q['t'], q.get('note', ''))
+            lines = topic_lines(jp, zh, recs, q['t'], q.get('note', ''), hit['start'])
         tags = q.get('tags') or ([q['tag']] if q.get('tag') else [])
         tags = [str(t).strip() for t in tags if str(t).strip()]
         if not tags:
