@@ -42,9 +42,10 @@ LiveTranslate 和 danmaku-it 都往这个库里写，live-archive 从里面读�
 
 - `LiveTranslate/user_settings.json` → `"history_db_path": "D:/HibaneHinome/live-archive/.data/translation_history.db"`
 - `danmaku-it/config.json` → `"database": "D:\\HibaneHinome\\live-archive\\.data\\translation_history.db"`
-- `live-archive/.state/config_data.toml` → `db = "D:/HibaneHinome/live-archive/.data/translation_history.db"`（**当前真正生效的那份**，见 [PITFALLS.md](docs/PITFALLS.md) 坑 1）
+- `live-archive/config.toml` → `db = "D:/HibaneHinome/live-archive/.data/translation_history.db"`（**工具默认读这份**；`--config` 可覆盖，见 [PITFALLS.md](docs/PITFALLS.md) 坑 1）
+- `live-archive/.state/config_data.toml` → 同一份配置的副本，给旧习惯 / 排查用；改完 `config.toml` 记得 `cp config.toml .state/config_data.toml` 同步。
 
-（`live-archive/config.toml` 里写的还是旧的 C# 库路径，已过期。）
+（旧的 C# 库路径不要再指回去；`export.py` 以库为准，指错会删场次。）
 
 ### 下播后的入口：编辑器
 
