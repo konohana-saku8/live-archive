@@ -117,6 +117,30 @@ CI：`.github/workflows/pages.yml`，`site/**` / `tools/**` / 构建配置有推
 - 话题靠 `TOPICS` 关键词表归类，顺即是优先级；表是照这批直播调的**经验规则**，不是通用分类器
 - 版本哈希 = data.js + app.js + style.css 三者，任一改动都会让浏览器重新取
 
+### 读写边界（防止手改被覆写）
+
+| 路径 | 谁写 | 能手改吗 |
+|---|---|---|
+| `.data/translation_history.db` | LiveTranslate / danmaku-it / 编辑器「拉取手机库」 | 不直接手改；只读查询，靠外部备份 |
+| `site/data/sessions/*.json` | `tools/export.py` | **不能**。整份覆盖，且会删除库里切不出来的场次 |
+| `site/data/subs/*.json`、`subs/index.json` | `tools/export_subs.py` | **不能**。不在本次 index 里的场次会被删除 |
+| `site/data/quotes.json` | 编辑器 / 人工 | 能。编辑器保存时备份到 `.state/editor-backups/` |
+| `site/data/overrides.json` | 编辑器 / 人工 | 能。逐行修正，`export.py` / `export_subs.py` 时套用 |
+| `site/data/tags.json` | 编辑器 | 能 |
+| `site/data/diary.json` | 人工 | 能；编辑器不管日记 |
+| `site/data/dynamics.json` | `tools/export_dynamics.py` | **不能**，重新导出会覆盖 |
+| `.build/` | `tools/gen_data.py` | **不能**，生成物 |
+| `dist/` | Vite | **不能**，生成物 |
+| `tools/fixes_data.json` / `tools/asr_fixes.py` | 编辑器 / 人工 | 能；全局修正，下次 export 生效 |
+
+- **`npm run build` 只跑 gen_data + Vite，不跑 export**。在编辑器里改的 `overrides.json` 必须先 `export.py`（或点编辑器「重建站点」）才会进 sessions 和 dist；只 build 的话，页面仍是旧译文。
+- **`export.py` 会删文件**：`site/data/sessions/` 里存在、但这次从 DB 没生成出来的场次会被 `os.remove()`。`export_subs.py` 同理删 subs。「跳过」是时间窗过滤，不等于安全——被跳过且磁盘上有文件的场次也会进「移除」。
+- **会让 export 删除历史场次的配置改动**：`source.db` 指错（尤其旧的 C# 库）、`time_window` 改窄、`time_window_keep` 漏掉白天场、`session_gap_min` / `min_records` 改变导致场次文件名变化。动这些之前先 `export.py --dry-run`，确认「清掉 0」。
+- **编辑器「重建站点」= export → export_subs → gen_data → Vite**，同样有删除风险；DB 不稳时不要直接点，先手动 dry-run。
+- `publish.py` 也会先 export；默认只本地提交 `site/data`、不推送。用 `publish.cmd --dry-run` 先看变更。
+- 编辑器写入是原子写 + 备份（quotes / tags / fixes / overrides 都在 `.state/editor-backups/`）；但备份不覆盖 sessions 的删除，**git 才是最后一道保险**：批量操作前先提交，误删的 sessions 可用 `git checkout -- site/data/sessions/<文件>` 恢复。
+- `sel` 存的是 records 下标：重新导出后如果场次切分变了，同一个 `t` 的下标可能对不上，`selected_lines()` 会按 `t` 校验并跳过对不上的行，摘录会悄悄变短。改切场配置后要回查摘录。
+
 ### 数据文件 schema
 
 `diary.json`（list，**最新在最前**）
