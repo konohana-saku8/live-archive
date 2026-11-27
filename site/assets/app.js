@@ -1142,15 +1142,29 @@
 
   function makeQuoteCard(q, btn) {
     var W = 720, PAD = 64, TW = W - PAD * 2;
+    var JP_FONT = '600 35px "Yu Gothic", "Noto Sans JP", "Microsoft YaHei", sans-serif';
+    var ZH_FONT = '400 26px "Noto Sans JP", "Microsoft YaHei", sans-serif';
     var m = document.createElement('canvas').getContext('2d');
-    m.font = '600 35px "Yu Gothic", "Noto Sans JP", "Microsoft YaHei", sans-serif';
-    var jpL = wrapLines(m, q.jp, TW);
-    m.font = '400 26px "Noto Sans JP", "Microsoft YaHei", sans-serif';
-    var zhL = wrapLines(m, q.zh, TW);
+    // 卡片按「一条逐字稿 = 一段原文 + 一段译文」排，原文和译文交替，不再整块分开。
+    var lines = (q.lines && q.lines.length) ? q.lines : [{ jp: q.jp || '', zh: q.zh || '' }];
+    var entries = lines.map(function (l) {
+      m.font = JP_FONT;
+      var jp = wrapLines(m, l.jp || '', TW);
+      m.font = ZH_FONT;
+      var zh = wrapLines(m, l.zh || '', TW);
+      return { jp: jp, zh: zh, hasZh: !!(l.zh && String(l.zh).trim()) };
+    });
     var ref = quoteRef(q);
+    m.font = '400 22px "Microsoft YaHei", sans-serif';
     var refL = ref ? wrapLines(m, ref.text, TW - 28) : [];
-    var H = 250 + jpL.length * 53 + zhL.length * 40 + (ref ? refL.length * 36 + 70 : 0) + 120;
-    H = Math.max(760, Math.min(2400, H));
+    // 高度按实际排版累加，不设 2400 上限：长摘录整段输出，宁可图长也不截断。
+    var bodyH = 0;
+    entries.forEach(function (e) {
+      bodyH += e.jp.length * 53;
+      if (e.hasZh) bodyH += 6 + e.zh.length * 40;
+      bodyH += 26;
+    });
+    var H = Math.max(760, 148 + (ref ? 78 + refL.length * 36 : 0) + bodyH + 120);
 
     var c = document.createElement('canvas');
     c.width = W; c.height = H;
@@ -1185,13 +1199,18 @@
         refL.forEach(function (line) { x.fillText(line, PAD, y); y += 36; });
         y += 46;
       }
-      x.fillStyle = '#f5efe9';
-      x.font = '600 35px "Yu Gothic", "Noto Sans JP", "Microsoft YaHei", sans-serif';
-      jpL.forEach(function (line) { x.fillText(line, PAD, y); y += 53; });
-      y += 30;
-      x.fillStyle = '#aaa09a';
-      x.font = '400 26px "Noto Sans JP", "Microsoft YaHei", sans-serif';
-      zhL.forEach(function (line) { x.fillText(line, PAD, y); y += 40; });
+      entries.forEach(function (e) {
+        x.fillStyle = '#f5efe9';
+        x.font = JP_FONT;
+        e.jp.forEach(function (line) { x.fillText(line, PAD, y); y += 53; });
+        if (e.hasZh) {
+          y += 6;
+          x.fillStyle = '#aaa09a';
+          x.font = ZH_FONT;
+          e.zh.forEach(function (line) { x.fillText(line, PAD, y); y += 40; });
+        }
+        y += 26;
+      });
 
       x.fillStyle = '#5f5752';
       x.font = '400 17px "Microsoft YaHei", sans-serif';
