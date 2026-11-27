@@ -118,6 +118,31 @@
     return AQ.inflight;
   }
 
+  // 节奏页：整场逐字稿 + SC + 弹幕按节拍对应，只在打开这一页时取
+  var AR = { rows: null, inflight: null, failed: false };
+  function loadRhythm() {
+    if (AR.rows) return Promise.resolve(AR.rows);
+    if (AR.inflight) return AR.inflight;
+    var v = (D.meta && D.meta.rhythmVer) || '';
+    AR.inflight = fetch('rhythm.json' + (v ? '?v=' + v : ''), { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (blob) {
+        AR.rows = blob || null;
+        AR.failed = false;
+        AR.inflight = null;
+        return AR.rows;
+      })
+      .catch(function (err) {
+        AR.failed = true;
+        AR.inflight = null;
+        throw err;
+      });
+    return AR.inflight;
+  }
+
   function loadDiaryBody(d) {
     if (!d || d.body) return Promise.resolve(d);
     var key = d.key;
@@ -186,7 +211,7 @@
   }
 
   var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false,
-    tlKind: 'all', learn: false };
+    tlKind: 'all', learn: false, rhFilter: 'all', rhShown: 6, rh: '' };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
@@ -433,6 +458,7 @@
     state.hideEmpty = false;
     state.scOnly = false;
     if (r.view === 'quotes') { setNav('quotes'); renderQuotes(); }
+    else if (r.view === 'rhythm') { setNav('rhythm'); renderRhythm(); }
     else if (r.view === 'timeline') { setNav('timeline'); renderTimeline(); }
     // 存档只有一个页面：日历选日 → 选场次 → 同页展开逐字稿
     else if (r.view === 'archive') {
@@ -1067,6 +1093,178 @@
         if (el) { el.classList.add('hit'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
       });
     }
+    setFoot();
+  }
+
+  /* ---------- 节奏：整场逐字稿 / SC / 弹幕一一对应 ----------
+     和摘录卡片同一套组织方式，但覆盖全场的每一句逐字稿。
+     SC 放在卡片头部当作被引用的评论，她的话缩进成跟帖；弹幕按节拍归组，
+     每一句旁边标出同期弹幕数，点开就能看到那一瞬间飘过的原文。 */
+  function renderRhythm() {
+    var tok = pageTok;
+    if (!AR.rows) {
+      loadingPage('ONE STREAM, EVERY BEAT', '节奏', '正在载入整场记录…');
+      loadRhythm().then(function () {
+        if (tok === pageTok) renderRhythm();
+      }).catch(function () {
+        if (tok === pageTok) failPage('整场记录没能加载，请刷新重试。');
+      });
+      return;
+    }
+    var R = AR.rows;
+    var beats = R.beats || [];
+    if (!beats.length) { failPage('这场还没有节奏数据。'); return; }
+
+    var kinds = [['all', '全部'], ['sc', '带 SC'], ['free', '无 SC'], ['quote', '已摘录']];
+    function dmRow(d) {
+      return '<div class="rh-dm"><span>' + esc(d.hms || '') + '</span><b>' +
+        esc(d.name || '观众') + '</b><p>' + esc(d.text) + '</p></div>';
+    }
+    function scRow(s) {
+      return '<div class="qsc"><b>' + esc(s.name || '观众') +
+        '<span class="rh-price">¥' + (s.price || 0) + '</span></b><p>' + esc(s.text) + '</p></div>';
+    }
+    function card(b, bi) {
+      var byId = {};
+      b.scs.forEach(function (s) { byId[s.id] = s; });
+      var hs = b.scs.slice(0, 2).map(scRow).join('');
+      if (b.scs.length > 2) {
+        hs += '<button class="rh-sc-more" data-bi="' + bi + '">还有 ' + (b.scs.length - 2) + ' 条 SC ↓</button>';
+      }
+      var preview = b.dms.slice(0, 3).map(dmRow).join('');
+      var posts = b.lines.map(function (l, li) {
+        var s = l.sc ? byId[l.sc] : null;
+        var badge = s ? '<span class="rh-lsc">屏上 SC · ' + esc(s.name || '观众') + '</span>' : '';
+        var dmn = (l.dmi || []).length;
+        var dbtn = dmn ? '<button class="rh-line-dm" data-bi="' + bi + '" data-li="' + li +
+          '">同期弹幕 ' + dmn + ' 条</button>' : '';
+        return '<div class="qpost">' +
+          '<a class="qt" href="#/archive/' + encodeURIComponent(R.session) + '?t=' +
+            encodeURIComponent(l.t) + '" title="在原稿中定位">' + esc(l.t) + '</a>' +
+          '<div class="qpc">' + badge +
+            '<p class="jp">' + esc(l.jp) + '</p>' +
+            (l.zh ? '<p class="zh">' + esc(l.zh) + '</p>' : '') +
+            (dbtn ? '<div class="rh-lacts">' + dbtn + '</div>' : '') +
+          '</div></div>';
+      }).join('');
+      return '<article class="quote rh-card" id="' + b.id + '">' +
+        '<div class="qhead">' +
+          '<span class="tag"' + tagStyle(b.tag) + '>' + esc(b.tag) + '</span>' +
+          '<h3 class="qtitle">' + esc(b.title) + '</h3>' +
+          '<span class="rh-range">' + esc(b.t) + ' — ' + esc(b.end) + '</span>' +
+        '</div>' +
+        '<div class="qbody">' +
+          '<div class="rh-refs">' + hs + '</div>' +
+          '<div class="rh-dmbar"><span>同期弹幕 ' + b.dms.length + ' 条</span>' +
+            (b.dms.length ? '<button class="rh-dm-more" data-bi="' + bi + '">展开全部 ↓</button>' : '') +
+          '</div>' +
+          '<div class="rh-dmprev">' + preview + '</div>' +
+          '<div class="qthread on">' + posts + '</div>' +
+        '</div></article>';
+    }
+
+    function paint() {
+      var box = document.getElementById('rhList');
+      if (!box) return;
+      var needle = state.rh.trim();
+      var list = beats.map(function (b, bi) { return { b: b, bi: bi }; }).filter(function (x) {
+        var b = x.b;
+        if (state.rhFilter === 'sc' && !b.scs.length) return false;
+        if (state.rhFilter === 'free' && b.scs.length) return false;
+        if (state.rhFilter === 'quote' && b.tag === '现场') return false;
+        if (!needle) return true;
+        var hay = [b.title].concat(b.lines.map(function (l) { return l.jp + ' ' + l.zh; }))
+          .concat(b.scs.map(function (s) { return s.name + ' ' + s.text; }))
+          .concat(b.dms.map(function (d) { return d.name + ' ' + d.text; })).join('\n');
+        return hay.toLowerCase().indexOf(needle.toLowerCase()) >= 0;
+      });
+      state.rhList = list;
+      var shown = list.slice(0, state.rhShown);
+      box.innerHTML = shown.map(function (x) { return card(x.b, x.bi); }).join('') ||
+        '<div class="empty">这个筛选条件下没有内容。</div>';
+      var more = document.getElementById('rhMore');
+      if (more) {
+        more.innerHTML = list.length > state.rhShown
+          ? '<button class="morebtn" id="rhMoreBtn">加载更多节拍 ↓</button>' +
+            '<span class="mhint">已显示 ' + shown.length + ' / ' + list.length + ' 段 · ' +
+            R.total + ' 条逐字稿全在其中</span>'
+          : '<span class="mhint">已全部显示 · ' + list.length + ' 段 · ' +
+            R.total + ' 条逐字稿全在其中</span>';
+      }
+      var cnt = document.getElementById('rhCount');
+      if (cnt) cnt.textContent = '共 ' + list.length + ' 段';
+    }
+
+    app.innerHTML =
+      '<section class="hero hero-sm">' +
+        '<div class="hero-copy">' +
+          '<div class="kicker">ONE STREAM, EVERY BEAT</div>' +
+          '<h1>节奏<span class="thin">，</span><span class="accent">' + R.total + '</span> 句</h1>' +
+          '<p class="lead">' + esc(R.title) + ' 整场按 SC 与话题切成 ' + beats.length + ' 段。' +
+          '每段把观众发言和她的回应放在一起，' + R.scCount + ' 条 SC、' +
+          num(R.dmCount) + ' 条弹幕都按时间对回原句；每一句逐字稿都能展开同期弹幕。</p>' +
+        '</div>' +
+      '</section>' +
+      '<div class="filters" id="rhKinds">' + kinds.map(function (x) {
+        return '<button class="chip' + (state.rhFilter === x[0] ? ' on' : '') +
+          '" data-k="' + x[0] + '">' + x[1] + '</button>';
+      }).join('') +
+        '<input class="rh-search" id="rhSearch" type="search" placeholder="在本场找原句、SC 或弹幕…" value="' +
+        esc(state.rh) + '" aria-label="在本场搜索">' +
+        '<span class="rh-count" id="rhCount"></span>' +
+      '</div>' +
+      '<div class="qlist" id="rhList"></div>' +
+      '<div class="qmore" id="rhMore"></div>';
+
+    document.getElementById('rhKinds').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip');
+      if (!b) return;
+      state.rhFilter = b.getAttribute('data-k');
+      state.rhShown = 6;
+      document.querySelectorAll('#rhKinds .chip').forEach(function (c) {
+        c.classList.toggle('on', c === b);
+      });
+      paint();
+    });
+    document.getElementById('rhSearch').addEventListener('input', function (e) {
+      state.rh = e.target.value;
+      state.rhShown = 6;
+      paint();
+    });
+    document.getElementById('rhMore').addEventListener('click', function (e) {
+      var b = e.target.closest('#rhMoreBtn');
+      if (!b) return;
+      state.rhShown += 6;
+      paint();
+    });
+    document.getElementById('rhList').addEventListener('click', function (e) {
+      var b = e.target.closest('.rh-dm-more, .rh-line-dm, .rh-sc-more');
+      if (!b) return;
+      var beat = beats[+b.getAttribute('data-bi')];
+      if (!beat) return;
+      var host = b.parentNode;
+      var panel = host.querySelector(':scope > .rh-panel');
+      if (panel) {
+        panel.remove();
+        b.textContent = b.getAttribute('data-label') || b.textContent;
+        return;
+      }
+      b.setAttribute('data-label', b.textContent);
+      b.textContent = '收起 ↑';
+      var div = document.createElement('div');
+      div.className = 'rh-panel';
+      if (b.classList.contains('rh-sc-more')) {
+        div.innerHTML = beat.scs.slice(2).map(scRow).join('');
+      } else if (b.classList.contains('rh-dm-more')) {
+        div.innerHTML = beat.dms.map(dmRow).join('');
+      } else {
+        var idxs = (beat.lines[+b.getAttribute('data-li')] || {}).dmi || [];
+        div.innerHTML = idxs.map(function (i) { return beat.dms[i]; }).filter(Boolean).map(dmRow).join('') ||
+          '<div class="rh-dm">没有记录到同期弹幕。</div>';
+      }
+      host.appendChild(div);
+    });
+    paint();
     setFoot();
   }
 

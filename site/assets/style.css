@@ -549,6 +549,57 @@ a.hl .hl-dot{
   margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--line);
   font-size:11.5px;color:var(--dim-2);line-height:1.65;
 }
+/* 节奏页：沿用摘录卡片的骨架，补上 SC 金额、弹幕流与逐句对应 */
+.rh-range{flex:none;font:10.5px var(--mono);color:var(--dim-2);letter-spacing:.04em}
+.rh-price{margin-left:7px;color:var(--gold);font-weight:400}
+.rh-refs .qsc{margin-bottom:8px}
+.rh-refs .qsc:last-child{margin-bottom:0}
+.rh-sc-more,.rh-dm-more,.rh-line-dm{
+  font:10.5px var(--mono);color:var(--dim-2);padding:3px 7px;
+  border:1px solid var(--line);border-radius:5px;background:rgba(255,255,255,.02);
+  cursor:pointer;transition:.2s;
+}
+.rh-sc-more:hover,.rh-dm-more:hover,.rh-line-dm:hover{color:var(--fire-soft);border-color:rgba(255,122,69,.3)}
+.rh-sc-more{margin-top:2px}
+.rh-dmbar{display:flex;align-items:center;gap:10px;margin:12px 0 6px}
+.rh-dmbar>span{font:10.5px var(--mono);color:var(--dim-2);letter-spacing:.04em}
+.rh-dmprev{border-left:1px solid rgba(140,180,225,.18);padding-left:10px;margin-bottom:8px}
+.rh-dm{
+  display:grid;grid-template-columns:58px 108px minmax(0,1fr);gap:8px;
+  padding:2px 0;font-size:11.5px;line-height:1.5;
+}
+.rh-dm>span{font:10px/1.6 var(--mono);color:var(--dim-2)}
+.rh-dm>b{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-weight:500;color:#8fb6dc;
+}
+.rh-dm>p{margin:0;min-width:0;color:var(--dim);word-break:break-word}
+.rh-lsc{
+  display:inline-block;margin-bottom:3px;padding:0 6px;border-radius:4px;
+  font:10px/1.6 var(--mono);color:var(--fire-soft);
+  background:rgba(255,122,69,.09);box-shadow:inset 0 0 0 1px rgba(255,122,69,.2);
+}
+.rh-lacts{margin-top:3px}
+.rh-panel{
+  margin:7px 0 3px;padding:8px 10px;border-radius:7px;
+  background:rgba(120,170,225,.045);border:1px solid rgba(140,180,225,.12);
+  max-height:340px;overflow:auto;
+}
+.rh-search{
+  min-width:220px;flex:1;max-width:340px;padding:7px 11px;
+  border:1px solid var(--line-strong);border-radius:8px;background:rgba(255,255,255,.03);
+  color:var(--ink);font-size:12.5px;outline:none;
+}
+.rh-search::placeholder{color:var(--dim-2)}
+.rh-search:focus{border-color:rgba(255,122,69,.45)}
+.rh-count{font:10.5px var(--mono);color:var(--dim-2);margin-left:auto}
+@media(max-width:760px){
+  .rh-range{font-size:10px}
+  .rh-dm{grid-template-columns:52px minmax(0,1fr);gap:2px 8px}
+  .rh-dm>p{grid-column:2}
+  .rh-search{min-width:0;max-width:none;flex-basis:100%}
+  .rh-count{margin-left:0}
+}
 @media(max-width:760px){
   .quote{padding:20px 0 20px 14px}
   .quote::before{top:20px;bottom:18px}
