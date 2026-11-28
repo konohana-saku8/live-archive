@@ -1096,10 +1096,10 @@
     setFoot();
   }
 
-  /* ---------- 节奏：整场逐字稿 / SC / 弹幕一一对应 ----------
-     和摘录卡片同一套组织方式，但覆盖全场的每一句逐字稿。
-     SC 放在卡片头部当作被引用的评论，她的话缩进成跟帖；弹幕按节拍归组，
-     每一句旁边标出同期弹幕数，点开就能看到那一瞬间飘过的原文。 */
+  /* ---------- 节奏：整场逐字稿与 SC 的回应关系 ----------
+     有对应关系的 SC 与她的话放在一张卡片里：SC 作被引用评论，她的话缩进成跟帖。
+     没有对应的按时间散装。卡片整体按时间顺序排列。 */
+
   function renderRhythm() {
     var tok = pageTok;
     if (!AR.rows) {
@@ -1115,51 +1115,35 @@
     var beats = R.beats || [];
     if (!beats.length) { failPage('这场还没有节奏数据。'); return; }
 
-    var kinds = [['all', '全部'], ['sc', '带 SC'], ['free', '无 SC'], ['quote', '已摘录']];
-    function dmRow(d) {
-      return '<div class="rh-dm"><span>' + esc(d.hms || '') + '</span><b>' +
-        esc(d.name || '观众') + '</b><p>' + esc(d.text) + '</p></div>';
-    }
+    var kinds = [['all', '全部'], ['reply', '有回应'], ['sc', '散装 SC'],
+                 ['free', '散装逐字稿'], ['quote', '已摘录']];
     function scRow(s) {
       return '<div class="qsc"><b>' + esc(s.name || '观众') +
         '<span class="rh-price">¥' + (s.price || 0) + '</span></b><p>' + esc(s.text) + '</p></div>';
     }
-    function card(b, bi) {
-      var byId = {};
-      b.scs.forEach(function (s) { byId[s.id] = s; });
-      var hs = b.scs.slice(0, 2).map(scRow).join('');
-      if (b.scs.length > 2) {
-        hs += '<button class="rh-sc-more" data-bi="' + bi + '">还有 ' + (b.scs.length - 2) + ' 条 SC ↓</button>';
-      }
-      var preview = b.dms.slice(0, 3).map(dmRow).join('');
-      var posts = b.lines.map(function (l, li) {
-        var s = l.sc ? byId[l.sc] : null;
-        var badge = s ? '<span class="rh-lsc">屏上 SC · ' + esc(s.name || '观众') + '</span>' : '';
-        var dmn = (l.dmi || []).length;
-        var dbtn = dmn ? '<button class="rh-line-dm" data-bi="' + bi + '" data-li="' + li +
-          '">同期弹幕 ' + dmn + ' 条</button>' : '';
-        return '<div class="qpost">' +
-          '<a class="qt" href="#/archive/' + encodeURIComponent(R.session) + '?t=' +
-            encodeURIComponent(l.t) + '" title="在原稿中定位">' + esc(l.t) + '</a>' +
-          '<div class="qpc">' + badge +
-            '<p class="jp">' + esc(l.jp) + '</p>' +
-            (l.zh ? '<p class="zh">' + esc(l.zh) + '</p>' : '') +
-            (dbtn ? '<div class="rh-lacts">' + dbtn + '</div>' : '') +
-          '</div></div>';
-      }).join('');
-      return '<article class="quote rh-card" id="' + b.id + '">' +
+    function post(l, s) {
+      var badge = s ? '<span class="rh-lsc">回应这条 · ' + esc(s.name || '观众') + '</span>' : '';
+      return '<div class="qpost">' +
+        '<a class="qt" href="#/archive/' + encodeURIComponent(R.session) + '?t=' +
+          encodeURIComponent(l.t) + '" title="在原稿中定位">' + esc(l.t) + '</a>' +
+        '<div class="qpc">' + badge +
+          '<p class="jp">' + esc(l.jp) + '</p>' +
+          (l.zh ? '<p class="zh">' + esc(l.zh) + '</p>' : '') +
+        '</div></div>';
+    }
+    function card(c) {
+      var hs = c.scs.map(scRow).join('');
+      var posts = c.lines.map(function (l) { return post(l, c.kind === 'reply' ? c.scs[0] : null); }).join('');
+      var head = (hs ? '<div class="rh-refs">' + hs + '</div>' : '') +
+        (c.note ? '<div class="rh-note">' + esc(c.note) + '</div>' : '');
+      return '<article class="quote rh-card rh-' + c.kind + '" id="' + c.id + '">' +
         '<div class="qhead">' +
-          '<span class="tag"' + tagStyle(b.tag) + '>' + esc(b.tag) + '</span>' +
-          '<h3 class="qtitle">' + esc(b.title) + '</h3>' +
-          '<span class="rh-range">' + esc(b.t) + ' — ' + esc(b.end) + '</span>' +
+          '<span class="tag"' + tagStyle(c.tag) + '>' + esc(c.tag) + '</span>' +
+          '<h3 class="qtitle">' + esc(c.title) + '</h3>' +
+          '<span class="rh-range">' + esc(c.t) + ' — ' + esc(c.end) + '</span>' +
         '</div>' +
-        '<div class="qbody">' +
-          '<div class="rh-refs">' + hs + '</div>' +
-          '<div class="rh-dmbar"><span>同期弹幕 ' + b.dms.length + ' 条</span>' +
-            (b.dms.length ? '<button class="rh-dm-more" data-bi="' + bi + '">展开全部 ↓</button>' : '') +
-          '</div>' +
-          '<div class="rh-dmprev">' + preview + '</div>' +
-          '<div class="qthread on">' + posts + '</div>' +
+        '<div class="qbody">' + head +
+          (posts ? '<div class="qthread on">' + posts + '</div>' : '') +
         '</div></article>';
     }
 
@@ -1167,29 +1151,28 @@
       var box = document.getElementById('rhList');
       if (!box) return;
       var needle = state.rh.trim();
-      var list = beats.map(function (b, bi) { return { b: b, bi: bi }; }).filter(function (x) {
-        var b = x.b;
-        if (state.rhFilter === 'sc' && !b.scs.length) return false;
-        if (state.rhFilter === 'free' && b.scs.length) return false;
-        if (state.rhFilter === 'quote' && b.tag === '现场') return false;
+      var list = beats.filter(function (c) {
+        if (state.rhFilter === 'reply' && c.kind !== 'reply') return false;
+        if (state.rhFilter === 'sc' && c.kind !== 'sc') return false;
+        if (state.rhFilter === 'free' && c.kind !== 'free') return false;
+        if (state.rhFilter === 'quote' && c.tag === '现场' && c.tag !== '声明') return false;
         if (!needle) return true;
-        var hay = [b.title].concat(b.lines.map(function (l) { return l.jp + ' ' + l.zh; }))
-          .concat(b.scs.map(function (s) { return s.name + ' ' + s.text; }))
-          .concat(b.dms.map(function (d) { return d.name + ' ' + d.text; })).join('\n');
+        var hay = [c.title].concat(c.lines.map(function (l) { return l.jp + ' ' + l.zh; }))
+          .concat(c.scs.map(function (s) { return s.name + ' ' + s.text; })).join('\n');
         return hay.toLowerCase().indexOf(needle.toLowerCase()) >= 0;
       });
       state.rhList = list;
       var shown = list.slice(0, state.rhShown);
-      box.innerHTML = shown.map(function (x) { return card(x.b, x.bi); }).join('') ||
+      box.innerHTML = shown.map(card).join('') ||
         '<div class="empty">这个筛选条件下没有内容。</div>';
       var more = document.getElementById('rhMore');
       if (more) {
         more.innerHTML = list.length > state.rhShown
-          ? '<button class="morebtn" id="rhMoreBtn">加载更多节拍 ↓</button>' +
+          ? '<button class="morebtn" id="rhMoreBtn">加载更多 ↓</button>' +
             '<span class="mhint">已显示 ' + shown.length + ' / ' + list.length + ' 段 · ' +
-            R.total + ' 条逐字稿全在其中</span>'
+            R.total + ' 条逐字稿全部在内</span>'
           : '<span class="mhint">已全部显示 · ' + list.length + ' 段 · ' +
-            R.total + ' 条逐字稿全在其中</span>';
+            R.total + ' 条逐字稿全部在内</span>';
       }
       var cnt = document.getElementById('rhCount');
       if (cnt) cnt.textContent = '共 ' + list.length + ' 段';
@@ -1200,16 +1183,15 @@
         '<div class="hero-copy">' +
           '<div class="kicker">ONE STREAM, EVERY BEAT</div>' +
           '<h1>节奏<span class="thin">，</span><span class="accent">' + R.total + '</span> 句</h1>' +
-          '<p class="lead">' + esc(R.title) + ' 整场按 SC 与话题切成 ' + beats.length + ' 段。' +
-          '每段把观众发言和她的回应放在一起，' + R.scCount + ' 条 SC、' +
-          num(R.dmCount) + ' 条弹幕都按时间对回原句；每一句逐字稿都能展开同期弹幕。</p>' +
+          '<p class="lead">' + esc(R.title) + ' 整场按时间顺序排列。有对应的 SC 与她的回应放在同一张卡片里，' +
+          '没有对应的按时间散装；' + R.scCount + ' 条 SC 与 ' + R.total + ' 条逐字稿都在其中。</p>' +
         '</div>' +
       '</section>' +
       '<div class="filters" id="rhKinds">' + kinds.map(function (x) {
         return '<button class="chip' + (state.rhFilter === x[0] ? ' on' : '') +
           '" data-k="' + x[0] + '">' + x[1] + '</button>';
       }).join('') +
-        '<input class="rh-search" id="rhSearch" type="search" placeholder="在本场找原句、SC 或弹幕…" value="' +
+        '<input class="rh-search" id="rhSearch" type="search" placeholder="在本场找原句或 SC…" value="' +
         esc(state.rh) + '" aria-label="在本场搜索">' +
         '<span class="rh-count" id="rhCount"></span>' +
       '</div>' +
@@ -1232,37 +1214,9 @@
       paint();
     });
     document.getElementById('rhMore').addEventListener('click', function (e) {
-      var b = e.target.closest('#rhMoreBtn');
-      if (!b) return;
+      if (!e.target.closest('#rhMoreBtn')) return;
       state.rhShown += 6;
       paint();
-    });
-    document.getElementById('rhList').addEventListener('click', function (e) {
-      var b = e.target.closest('.rh-dm-more, .rh-line-dm, .rh-sc-more');
-      if (!b) return;
-      var beat = beats[+b.getAttribute('data-bi')];
-      if (!beat) return;
-      var host = b.parentNode;
-      var panel = host.querySelector(':scope > .rh-panel');
-      if (panel) {
-        panel.remove();
-        b.textContent = b.getAttribute('data-label') || b.textContent;
-        return;
-      }
-      b.setAttribute('data-label', b.textContent);
-      b.textContent = '收起 ↑';
-      var div = document.createElement('div');
-      div.className = 'rh-panel';
-      if (b.classList.contains('rh-sc-more')) {
-        div.innerHTML = beat.scs.slice(2).map(scRow).join('');
-      } else if (b.classList.contains('rh-dm-more')) {
-        div.innerHTML = beat.dms.map(dmRow).join('');
-      } else {
-        var idxs = (beat.lines[+b.getAttribute('data-li')] || {}).dmi || [];
-        div.innerHTML = idxs.map(function (i) { return beat.dms[i]; }).filter(Boolean).map(dmRow).join('') ||
-          '<div class="rh-dm">没有记录到同期弹幕。</div>';
-      }
-      host.appendChild(div);
     });
     paint();
     setFoot();
