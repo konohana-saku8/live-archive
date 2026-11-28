@@ -625,6 +625,20 @@ a.hl .hl-dot{
 .chip.on{color:#1a0d07;background:linear-gradient(140deg,var(--fire-soft),var(--fire));border-color:transparent;font-weight:600}
 .chip .n{opacity:.6;margin-left:6px;font-size:11px}
 
+/* 时段角标：只有白天场 / 傍晚场这种少数场次才出现，深夜场不标——
+   只写日期会让人误以为又是零点那场。摘录 chip 与存档场次卡共用。 */
+.slot{
+  display:inline-block;margin-left:6px;padding:1px 5px;border-radius:4px;
+  font-family:var(--sans);font-style:normal;font-size:10px;line-height:1.5;
+  letter-spacing:.06em;vertical-align:middle;
+  color:var(--gold);background:rgba(232,196,137,.13);border:1px solid rgba(232,196,137,.3);
+}
+.chip.on .slot{color:#3a220f;background:rgba(26,13,7,.14);border-color:rgba(26,13,7,.22)}
+.cs-day .slot{margin:5px 0 0}
+/* 场次卡上的日期本身就是一枚胶囊，里面再套一枚太挤，改成同色的后缀文字 */
+.qcard .tag .slot{border:0;background:none;padding:0;margin-left:8px;opacity:.72}
+.shead .slot{font-size:11px;margin-left:14px;padding:2px 7px}
+
 /* 摘录分页加载 */
 .qmore{display:flex;flex-direction:column;align-items:center;gap:10px;margin:28px 0 0;min-height:34px}
 .morebtn{

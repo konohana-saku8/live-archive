@@ -260,7 +260,18 @@
   function tname(i) { return D.topics[i] ? D.topics[i][0] : '杂聊'; }
   function tcolor(i) { return D.topics[i] ? D.topics[i][1] : '#4a4f5e'; }
   function sess(id) { return D.sessions[id]; }
-  function dateLabel(s) { return s.date.replace('-', '.') + ' ' + s.week; }
+  // 场次时段：绝大多数场是零点前后开播的深夜档，白天场、傍晚场是少数，
+  // 只写日期的标签会让人以为又是深夜场，所以按开播小时给少数场补一个角标。
+  function slotOf(start) {
+    var h = parseInt(String(start || '0').slice(0, 2), 10) || 0;
+    if (h >= 5 && h < 12) return '白天场';
+    if (h >= 12 && h < 22) return '傍晚场';
+    return '深夜档';
+  }
+  function slotBadge(start) {
+    var t = slotOf(start);
+    return t === '深夜档' ? '' : '<i class="slot">' + t + '</i>';
+  }
 
   // 摘录标签不设白名单，按内容自由增加；颜色从名称做稳定 hash，
   // 同一个标签在任何页面、任何一次构建里都是同一个颜色。
@@ -651,7 +662,7 @@
             '<div class="date">' + esc(last.dateLong) + ' ' + esc(last.week) + '</div>' +
             '<h3>' + esc(last.start) + ' — ' + esc(last.end) + '</h3>' +
             '<div class="sub">' + (last.dur >= 60 ? '约 ' + (last.dur / 60).toFixed(1) + ' 小时' : '约 ' + last.dur + ' 分钟') +
-              ' · ' + (last.start >= '12:00' ? '傍晚特别场' : '深夜档') + '</div>' +
+              ' · ' + slotOf(last.start) + '</div>' +
             '<div class="nums">' +
               '<div><b>' + last.count + '</b><span>记录</span></div>' +
               '<div><b>' + Object.keys(last.topics).length + '</b><span>话题</span></div>' +
@@ -863,7 +874,7 @@
       return '<span style="color:' + tcolor(parseInt(k, 10)) + '">' + esc(tname(parseInt(k, 10))) + '</span>';
     }).join(' · ');
     return '<a class="qcard" href="#/archive/' + s.id + '">' +
-      '<div class="tag">' + esc(s.date.replace('-', '.')) + ' ' + esc(s.week) + '</div>' +
+      '<div class="tag">' + esc(s.date.replace('-', '.')) + ' ' + esc(s.week) + slotBadge(s.start) + '</div>' +
       '<p class="zh">' + esc(s.start) + ' — ' + esc(s.end) + '</p>' +
       '<p class="note">' + top + '</p>' +
       // 这一场的话题走向：横轴是时长，颜色是当分钟的话题
@@ -1036,7 +1047,7 @@
       sess.map(function (s) {
         var n = all.filter(function (q) { return q.s === s.id; }).length;
         return '<button class="chip' + (state.qs === String(s.id) ? ' on' : '') + '" data-s="' + esc(s.id) + '">' +
-          esc(s.date.replace('-', '.')) + '<span class="n">' + n + '</span></button>';
+          esc(s.date.replace('-', '.')) + slotBadge(s.start) + '<span class="n">' + n + '</span></button>';
       }).join('');
     var extra = '<div class="filters" id="sfilters"><span class="flabel">场次</span>' + schips + '</div>';
 
@@ -1472,7 +1483,7 @@
         return '<i style="background:' + (t < 0 ? '#2a2521' : tcolor(t)) + '"></i>';
       }).join('');
       return '<button class="cs-card' + (s.id === sid ? ' on' : '') + '" type="button" data-sid="' + s.id + '">' +
-        '<span class="cs-day">' + esc(s.date.replace('-', '.')) + '<em>' + esc(s.week) + '</em></span>' +
+        '<span class="cs-day">' + esc(s.date.replace('-', '.')) + '<em>' + esc(s.week) + '</em>' + slotBadge(s.start) + '</span>' +
         '<span class="cs-main">' +
           '<span class="cs-time">' + esc(s.start) + ' – ' + esc(s.end) +
             '<span>' + s.dur + ' 分钟 · ' + s.count + ' 条' + (qn ? ' · ' + qn + ' 段摘录' : '') + '</span></span>' +
@@ -1776,7 +1787,7 @@
       '<section class="arch-single">' +
         '<button class="cal-backtop" type="button" data-backtop="1">↑ 回到日历</button>' +
         '<div class="shead">' +
-          '<h2>' + esc(cur.date.replace('-', '.')) + ' <small>' + esc(cur.week) + '</small></h2>' +
+          '<h2>' + esc(cur.date.replace('-', '.')) + ' <small>' + esc(cur.week) + '</small>' + slotBadge(cur.start) + '</h2>' +
           '<div class="meta"><span><b>' + esc(cur.start) + ' – ' + esc(cur.end) + '</b></span>' +
             '<span><b>' + cur.count + '</b> 条记录</span><span>约 <b>' + cur.dur + '</b> 分钟</span>' +
             (qn ? '<span><b>' + qn + '</b> 段摘录</span>' : '') +
