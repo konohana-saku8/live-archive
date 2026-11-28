@@ -799,22 +799,46 @@ class Handler(BaseHTTPRequestHandler):
             'note': (b.get('note') or '').strip(),
             'sel': clean,
         }
-        # 引用块：一条摘录只带一种（SC 或弹幕），两个字段互斥
-        for kind in ('sc', 'dm'):
-            ref = b.get(kind)
-            if not isinstance(ref, dict):
-                continue
-            name = (ref.get('name') or '').strip()
-            text = (ref.get('text') or '').strip()
-            if name or text:
-                entry[kind] = {'name': name, 'text': text}
+        # 引用块：统一写 refs 数组，可挂多条 SC / 弹幕混排。
+        # 老数据还是单条 sc / dm，两种入参都接；编辑老条目时前端已换成 refs。
+        refs = []
+        raw_refs = b.get('refs')
+        if isinstance(raw_refs, list):
+            for r in raw_refs:
+                if not isinstance(r, dict):
+                    continue
+                name = (r.get('name') or '').strip()
+                text = (r.get('text') or '').strip()
+                if not (name or text):
+                    continue
+                item = {'kind': 'dm' if r.get('kind') == 'dm' else 'sc',
+                        'name': name, 'text': text}
+                if r.get('price'):
+                    item['price'] = r['price']
+                if r.get('t'):
+                    item['t'] = str(r['t'])
+                refs.append(item)
+        if not refs:
+            for kind in ('sc', 'dm'):
+                ref = b.get(kind)
+                if not isinstance(ref, dict):
+                    continue
+                name = (ref.get('name') or '').strip()
+                text = (ref.get('text') or '').strip()
+                if name or text:
+                    refs.append({'kind': kind, 'name': name, 'text': text})
+        if refs:
+            entry['refs'] = refs
         i = b.get('i')
         old = qs[i] if isinstance(i, int) and 0 <= i < len(qs) else {}
         # 整场卡带构建用的 id / s / whole / refs / lines，表单不编辑这些字段，
         # 保存时必须原样带走，否则编辑一次就会丢引用、丢锚点、被首页当成普通摘录。
-        for k in ('id', 's', 'whole', 'refs'):
+        for k in ('id', 's', 'whole'):
             if k in old:
                 entry[k] = old[k]
+        # 整场卡的 refs 是构建期生成的，表单编辑不到，保存时原样带走
+        if old.get('whole') and not refs and 'refs' in old:
+            entry['refs'] = old['refs']
         if old.get('whole'):
             entry['lines'] = [{'t': recs[x['i']][0], 'jp': recs[x['i']][1], 'zh': recs[x['i']][2]}
                               for x in clean]

@@ -311,10 +311,12 @@ def collect(site_dir):
             skipped.append('%s %s' % (q['date'], q['t']))
             continue
         recs = recs_by_s.get(hit['id'], [])
+        # 引用统一走 refs（可多条混排）；老条目仍是单条 sc / dm，一并透传
+        refs = q.get('refs') if isinstance(q.get('refs'), list) else []
         sc = q.get('sc')
         dm = q.get('dm')
         jp, zh = q.get('jp', ''), q.get('zh', '')
-        if not sc and not dm and jp and zh:
+        if not refs and not sc and not dm and jp and zh:
             sc, jp, zh = split_sc(jp, zh)
         # 编辑器勾选过的条目用 sel 精确取行；老条目没有 sel，仍按首末句圈段。
         # 正文与逐字稿共用一份数据，jp/zh 由 lines 拼出。
@@ -338,6 +340,8 @@ def collect(site_dir):
             entry['session'] = want_session
         if q.get('sel'):
             entry['sel'] = q['sel']
+        if refs:
+            entry['refs'] = refs
         if sc:
             entry['sc'] = sc
         if dm:

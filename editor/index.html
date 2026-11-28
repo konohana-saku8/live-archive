@@ -101,13 +101,9 @@
       <input id="f-tags" placeholder="科普, 人生">
       <div id="tagPicks" class="picks"></div>
 
-      <label>引用（可选） <span class="hint">在右侧抽屉点一条 SC / 弹幕可自动填入</span></label>
-      <div id="refKinds" class="refkinds">
-        <button data-k="sc" class="on" title="引用一条 SC">SC</button>
-        <button data-k="dm" title="引用一条弹幕">弹幕</button>
-      </div>
-      <input id="f-scname" class="scname" placeholder="发送者">
-      <textarea id="f-sctext" class="sctext" rows="2" placeholder="原文，可多行；框会随内容长高"></textarea>
+      <label>引用（可选） <span class="hint">可挂多条；右侧抽屉点 SC / 弹幕会追加一条</span></label>
+      <div id="refList" class="reflist"></div>
+      <button id="refAdd" class="refadd" type="button" title="手填一条引用">+ 加一条空引用</button>
 
       <label>校勘 note</label>
       <textarea id="f-note" rows="3" placeholder="只写给以后的自己看：依据、出处、为什么这么校"></textarea>

@@ -53,7 +53,7 @@ LiveTranslate 和 danmaku-it 都往这个库里写，live-archive 从里面读�
 
 1. `python tools/export.py` 把新场次写进 `site/data/sessions/`，确认「清掉 0」。这一步不能省；只在编辑器里等，是等不到新场次的。
 2. `npm run editor`。左栏选场次；如果手机端刚采集完，先在上下文抽屉点「拉取手机库」，把新 SC / 弹幕追加到本机 DB（手机需在线；只追加，重复点不会翻倍）。
-3. 勾选逐字稿行生成摘录；引用块可以是 **SC 或弹幕二选一**，再写 title / tag / note。
+3. 勾选逐字稿行生成摘录；引用块可挂**多条** SC / 弹幕（`refs` 数组，混排也行），再写 title / tag / note。
 4. 改完点「重建站点」，或手动跑 `export.py → export_subs.py → gen_data.py → vite build`。
 5. 自查、提交；不 push，除非当场明确要求。
 

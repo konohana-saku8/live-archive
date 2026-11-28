@@ -4,7 +4,7 @@
 
   var B = {};
   var state = { sessions: [], key: '', recs: [], quotes: [], sel: {}, tags: [], edit: null,
-                reveal: false, ov: {}, ovEdit: -1, refKind: '' };
+                reveal: false, ov: {}, ovEdit: -1, refs: [] };
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -519,24 +519,83 @@
                 : '先在逐字稿里勾选要复制的行';
   }
 
-  // ---- 引用块：一条摘录可以挂一条 SC 或一条弹幕（二选一） ----
-  // 两个输入框沿用 f-sc* 的 id，内部只按 state.refKind 决定写 sc 还是 dm 字段。
-  function setRefKind(k) {
-    state.refKind = k === 'dm' ? 'dm' : 'sc';
-    Array.prototype.forEach.call($('refKinds').children, function (b) {
-      b.classList.toggle('on', b.getAttribute('data-k') === state.refKind);
+  // ---- 引用块：一条摘录可以挂多条引用，SC / 弹幕可混排 ----
+  // state.refs 是唯一数据源，DOM 只是它的投影；输入时同步回 state。
+  function renderRefs() {
+    var box = $('refList');
+    if (!state.refs.length) {
+      box.innerHTML = '<div class="rempty">还没有引用。右侧抽屉里点一条 SC / 弹幕会追加到这里。</div>';
+      return;
+    }
+    box.innerHTML = state.refs.map(function (r, i) {
+      var dm = r.kind === 'dm';
+      return '<div class="refrow" data-i="' + i + '">' +
+        '<div class="rhead">' +
+          '<span class="rkind">' +
+            '<button type="button" data-k="sc" class="' + (dm ? '' : 'on') + '">SC</button>' +
+            '<button type="button" data-k="dm" class="' + (dm ? 'on' : '') + '">弹幕</button>' +
+          '</span>' +
+          '<input class="refname" placeholder="发送者" value="' + esc(r.name || '') + '">' +
+          '<button type="button" class="rdel" title="删掉这条引用">×</button>' +
+        '</div>' +
+        '<textarea class="reftext" rows="2" placeholder="' + (dm ? '弹幕原文' : 'SC 原文') +
+          '，可多行；框会随内容长高">' + esc(r.text || '') + '</textarea>' +
+      '</div>';
+    }).join('');
+
+    Array.prototype.forEach.call(box.querySelectorAll('.refrow'), function (row) {
+      var i = Number(row.getAttribute('data-i'));
+      Array.prototype.forEach.call(row.querySelectorAll('.rkind button'), function (b) {
+        b.onclick = function () {
+          state.refs[i].kind = b.getAttribute('data-k');
+          renderRefs();          // 重画才能换掉占位文字与高亮
+          renderPreview();
+        };
+      });
+      var nameEl = row.querySelector('.refname');
+      nameEl.oninput = function () { state.refs[i].name = nameEl.value; renderPreview(); };
+      var textEl = row.querySelector('.reftext');
+      textEl.oninput = function () { state.refs[i].text = textEl.value; fitArea(textEl); renderPreview(); };
+      row.querySelector('.rdel').onclick = function () {
+        state.refs.splice(i, 1);
+        renderRefs(); renderPreview();
+      };
+      fitArea(textEl);
     });
-    $('f-sctext').placeholder = state.refKind === 'dm'
-      ? '弹幕原文，可多行；框会随内容长高'
-      : 'SC 原文，可多行；框会随内容长高';
   }
 
-  function refValue() {
-    return {
-      kind: state.refKind === 'dm' ? 'dm' : 'sc',
-      name: $('f-scname').value.trim(),
-      text: $('f-sctext').value.trim()
-    };
+  // 抽屉里点一条：已经有完全空着的行就填进去，不再堆一行
+  function addRef(kind, name, text) {
+    var reuse = null;
+    for (var i = 0; i < state.refs.length; i++) {
+      var r = state.refs[i];
+      if (!(r.name || '').trim() && !(r.text || '').trim()) { reuse = r; break; }
+    }
+    if (reuse) {
+      reuse.kind = kind === 'dm' ? 'dm' : 'sc';
+      reuse.name = name || '';
+      reuse.text = text || '';
+    } else {
+      state.refs.push({ kind: kind === 'dm' ? 'dm' : 'sc', name: name || '', text: text || '' });
+    }
+    renderRefs();
+    renderPreview();
+  }
+
+  // 只交回填过内容的引用；price / t 这类构建期字段原样带走
+  function refsValue() {
+    return state.refs.filter(function (r) {
+      return (r.name || '').trim() || (r.text || '').trim();
+    }).map(function (r) {
+      var o = {
+        kind: r.kind === 'dm' ? 'dm' : 'sc',
+        name: (r.name || '').trim(),
+        text: (r.text || '').trim()
+      };
+      if (r.price) o.price = r.price;
+      if (r.t) o.t = r.t;
+      return o;
+    });
   }
 
   // 文本框随内容长高，SC 常有多行，别让它缩在一条里横向滚
@@ -551,17 +610,17 @@
     $('selInfo').textContent = idx.length ? idx.length + ' 行 · ' +
       state.recs[idx[0]][0] + '–' + state.recs[idx[idx.length - 1]][0] : '未勾选';
 
-    var ref = refValue();
+    var refs = refsValue();
     var out = '';
     // 引用（SC / 弹幕）也是摘录的一部分，预览里必须看得到，否则会以为没填进去
-    if (ref.name || ref.text) {
+    out += refs.map(function (ref) {
       var dm = ref.kind === 'dm';
-      out += '<div class="psc' + (dm ? ' pdm' : '') + '">' +
+      return '<div class="psc' + (dm ? ' pdm' : '') + '">' +
         '<span class="psc-k">' + (dm ? '弹幕' : 'SC') + '</span>' +
         (ref.name ? '<b class="psc-n">' + esc(ref.name) + '</b>' : '<b class="psc-n dim">匿名</b>') +
         (ref.text ? '<span class="psc-t">' + esc(ref.text).replace(/\r?\n/g, '<br>') + '</span>' : '') +
         '</div>';
-    }
+    }).join('');
 
     if (idx.length) {
       out += idx.map(function (i) {
@@ -690,15 +749,11 @@
       var it = slice[i];
       if (it.k !== 'sc' && it.k !== 'dm') return;
       var isDm = it.k === 'dm';
-      row.title = isDm ? '点击填入摘录的弹幕引用' : '点击填入摘录的 SC 引用';
+      row.title = isDm ? '点击追加为摘录的弹幕引用' : '点击追加为摘录的 SC 引用';
       row.style.cursor = 'pointer';
       row.onclick = function () {
-        setRefKind(isDm ? 'dm' : 'sc');
-        $('f-scname').value = it.name || '';
-        $('f-sctext').value = it.text || '';
-        fitArea($('f-sctext'));
-        renderPreview();
-        toast('已填入' + (isDm ? '弹幕：' : ' SC：') + (it.name || '匿名') +
+        addRef(isDm ? 'dm' : 'sc', it.name, it.text);
+        toast('已追加' + (isDm ? '弹幕：' : ' SC：') + (it.name || '匿名') +
               ' · ' + it.text.slice(0, 24));
       };
     });
@@ -786,10 +841,8 @@
     state.sel = {};
     $('f-title').value = '';
     $('f-tags').value = '';
-    $('f-scname').value = '';
-    $('f-sctext').value = '';
-    fitArea($('f-sctext'));
-    setRefKind('sc');
+    state.refs = [];
+    renderRefs();
     $('f-note').value = '';
     $('btn-delete').hidden = true;
     $('editStatus').textContent = '新建';
@@ -810,12 +863,15 @@
     picked.forEach(function (x) { state.sel[x.i] = true; });
     $('f-title').value = q.title || '';
     $('f-tags').value = (q.tags || [q.tag]).join(', ');
-    // 老条目只有 sc；新条目可能是 dm。两者都读，回填时切到对应类型
-    var ref = q.sc || q.dm || null;
-    setRefKind(q.dm && !q.sc ? 'dm' : 'sc');
-    $('f-scname').value = (ref && ref.name) || '';
-    $('f-sctext').value = (ref && ref.text) || '';
-    fitArea($('f-sctext'));
+    // 引用：新格式是 refs 数组（可多条混排），老条目只有单条 sc / dm，一并读进来
+    var refs = (q.refs && q.refs.length) ? q.refs : [q.sc, q.dm].filter(Boolean);
+    state.refs = refs.map(function (r) {
+      var o = { kind: r.kind === 'dm' ? 'dm' : 'sc', name: r.name || '', text: r.text || '' };
+      if (r.price) o.price = r.price;
+      if (r.t) o.t = r.t;
+      return o;
+    });
+    renderRefs();
     $('f-note').value = q.note || '';
     $('btn-delete').hidden = false;
     var n = 0;
@@ -847,9 +903,9 @@
       title: $('f-title').value.trim(), tags: tags, note: $('f-note').value.trim(),
       sel: idx.map(function (i) { return { i: i, t: state.recs[i][0] }; })
     };
-    // 引用只写当前选中的那种：从 SC 改成弹幕时，旧的 sc 字段会随整条 entry 重建而消失
-    var ref = refValue();
-    if (ref.name || ref.text) data[ref.kind] = { name: ref.name, text: ref.text };
+    // 引用统一写成 refs 数组，几条都行；后端会清掉旧的 sc / dm 单字段
+    var refs = refsValue();
+    if (refs.length) data.refs = refs;
     post('/api/quote', data).then(function (r) {
       toast('已保存，记得点「重建站点」才会进页面');
       // 后端回的是写入下标，新建和更新都用它定位，别猜「最后一条」
@@ -1271,19 +1327,15 @@
   $('findPrev').onclick = function () { findMove(-1); };
   $('findNext').onclick = function () { findMove(1); };
   $('f-tags').addEventListener('input', syncPicks);
-  // SC / 弹幕两个字段随时同步到选段预览，改完就能在下面核对
-  ['f-scname', 'f-sctext'].forEach(function (id) {
-    $(id).addEventListener('input', function () {
-      if (id === 'f-sctext') fitArea(this);
-      renderPreview();
-    });
-  });
-  Array.prototype.forEach.call($('refKinds').children, function (b) {
-    b.onclick = function () {
-      setRefKind(b.getAttribute('data-k'));
-      renderPreview();
-    };
-  });
+  // 引用行的输入同步由 renderRefs() 逐行绑定，这里只管「加一条空引用」
+  $('refAdd').onclick = function () {
+    state.refs.push({ kind: 'sc', name: '', text: '' });
+    renderRefs();
+    renderPreview();
+    var rows = $('refList').querySelectorAll('.refrow');
+    var last = rows[rows.length - 1];
+    if (last) last.querySelector('.refname').focus();
+  };
   $('btn-save').onclick = saveQuote;
   $('btn-new').onclick = newQuote;
   $('btn-delete').onclick = async function () {

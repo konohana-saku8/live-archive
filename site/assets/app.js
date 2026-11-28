@@ -1190,9 +1190,12 @@
       var zh = wrapLines(m, l.zh || '', TW);
       return { jp: jp, zh: zh, hasZh: !!(l.zh && String(l.zh).trim()) };
     });
-    var ref = quoteRef(q);
+    // 引用可能有多条（SC 与弹幕混排），按顺序逐块排，块高按实际折行累加
     m.font = '400 22px "Microsoft YaHei", sans-serif';
-    var refL = ref ? wrapLines(m, ref.text, TW - 28) : [];
+    var refBlocks = quoteRefs(q).map(function (r) {
+      return { r: r, lines: wrapLines(m, r.text || '', TW - 28) };
+    });
+    var refH = refBlocks.reduce(function (n, b) { return n + 78 + b.lines.length * 36; }, 0);
     // 高度按实际排版累加，不设 2400 上限：长摘录整段输出，宁可图长也不截断。
     var bodyH = 0;
     entries.forEach(function (e) {
@@ -1200,7 +1203,7 @@
       if (e.hasZh) bodyH += 6 + e.zh.length * 40;
       bodyH += 26;
     });
-    var H = Math.max(760, 148 + (ref ? 78 + refL.length * 36 : 0) + bodyH + 120);
+    var H = Math.max(760, 148 + refH + bodyH + 120);
 
     var c = document.createElement('canvas');
     c.width = W; c.height = H;
@@ -1222,19 +1225,19 @@
       x.fillText(q.date.replace('-', '.') + '  ' + q.t + '   ·   ' + q.tag, PAD, 94);
 
       var y = 148;
-      if (ref) {
-        var isDm = ref.kind === 'dm';
+      refBlocks.forEach(function (b) {
+        var isDm = b.r.kind === 'dm';
         x.fillStyle = isDm ? 'rgba(150,195,240,.055)' : 'rgba(255,255,255,.045)';
-        x.fillRect(PAD - 18, y - 16, TW + 36, refL.length * 36 + 66);
+        x.fillRect(PAD - 18, y - 16, TW + 36, b.lines.length * 36 + 66);
         x.fillStyle = isDm ? '#8fbde4' : '#79a9d6';
         x.font = '600 19px "Microsoft YaHei", sans-serif';
-        x.fillText((isDm ? '弹幕 · ' : '') + (ref.name || '观众'), PAD, y);
+        x.fillText((isDm ? '弹幕 · ' : '') + (b.r.name || '观众'), PAD, y);
         y += 32;
         x.fillStyle = '#c9c3be';
         x.font = '400 22px "Microsoft YaHei", sans-serif';
-        refL.forEach(function (line) { x.fillText(line, PAD, y); y += 36; });
+        b.lines.forEach(function (line) { x.fillText(line, PAD, y); y += 36; });
         y += 46;
-      }
+      });
       entries.forEach(function (e) {
         x.fillStyle = '#f5efe9';
         x.font = JP_FONT;
@@ -1351,10 +1354,12 @@
     if (!btn) return;
     var q = D.quotes.filter(function (x) { return x.id === btn.getAttribute('data-id'); })[0];
     if (!q) return;
-    var cr = quoteRef(q);
-    var head = cr
-      ? (cr.kind === 'dm' ? '【弹幕】' : '') + '「' + (cr.name ? cr.name + '：' : '') + cr.text + '」\n'
-      : '';
+    // 引用可能有多条（SC 与弹幕混排），按卡片上的顺序逐条带出
+    var crefs = quoteRefs(q);
+    var head = crefs.map(function (r) {
+      return (r.kind === 'dm' ? '【弹幕】' : '') + '「' +
+        (r.name ? r.name + '：' : '') + r.text + '」';
+    }).join('\n') + (crefs.length ? '\n' : '');
     // 复制出去的正文和卡片上读到的顺序一致：一条原文跟一条译文交错，条目之间空一行。
     var rowLines = (q.lines && q.lines.length) ? q.lines : [{ jp: q.jp || '', zh: q.zh || '' }];
     var body = rowLines.map(function (l) {
