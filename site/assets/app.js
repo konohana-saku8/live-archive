@@ -211,7 +211,7 @@
   }
 
   var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false,
-    tlKind: 'all', learn: false, rhFilter: 'all', rh: '' };
+    tlKind: 'all', learn: false, rhFilter: 'all', rh: '', qScope: 'pick' };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
@@ -457,8 +457,13 @@
     state.q = '';
     state.hideEmpty = false;
     state.scOnly = false;
-    if (r.view === 'quotes') { setNav('quotes'); renderQuotes(); }
-    else if (r.view === 'rhythm') { setNav('rhythm'); renderRhythm(); }
+    if (r.view === 'quotes') {
+      setNav('quotes');
+      state.qScope = r.q.scope === 'full' ? 'full' : 'pick';
+      renderQuotes();
+    }
+    // 节奏已合入摘录页：旧深链仍可用，落到「整场」视图
+    else if (r.view === 'rhythm') { location.replace('#/quotes?scope=full' + (r.q.focus ? '&focus=' + encodeURIComponent(r.q.focus) : '')); return; }
     else if (r.view === 'timeline') { setNav('timeline'); renderTimeline(); }
     // 存档只有一个页面：日历选日 → 选场次 → 同页展开逐字稿
     else if (r.view === 'archive') {
@@ -1006,65 +1011,120 @@
     setFoot();
   }
 
+  // 摘录页：精选（人工挑的段落）与整场（全量逐字稿按回应分组）共用一个视图。
+  // 两种数据都转成同样的卡片对象，筛选、搜索、触底加载走同一条路径。
+  function rhythmAsQuotes(R) {
+    var sessId = -1;
+    (D.sessions || []).forEach(function (x) { if (x.key === R.session) sessId = x.id; });
+    var out = [];
+    (R.beats || []).forEach(function (c) {
+      var lines = c.lines || [];
+      out.push({
+        id: c.id, s: sessId, date: R.date, t: (lines[0] || {}).t || c.t,
+        tag: c.tag || '现场', tags: [c.tag || '现场'],
+        title: c.title || '', note: c.note || '',
+        refs: c.refs || [], lines: lines,
+        full: true, kind: c.kind || 'free', quote: !!c.quote,
+        jp: lines.map(function (l) { return l.jp; }).join('\n'),
+        zh: lines.map(function (l) { return l.zh; }).join('\n'),
+      });
+    });
+    return out;
+  }
+
   function renderQuotes() {
     var tok = pageTok;
-    if (!AQ.rows) {
-      loadingPage('TRANSCRIPT EXCERPTS', '摘录', '正在载入摘录…');
-      loadQuotes().then(function () {
+    var full = state.qScope === 'full';
+    var needQuotes = !full && !AQ.rows;
+    var needRhythm = full && !AR.rows;
+    if (needQuotes || needRhythm) {
+      loadingPage(full ? 'ONE STREAM, EVERY BEAT' : 'TRANSCRIPT EXCERPTS',
+        full ? '整场' : '摘录', full ? '正在载入整场记录…' : '正在载入摘录…');
+      var job = needQuotes ? loadQuotes() : loadRhythm();
+      job.then(function () {
         if (tok === pageTok) renderQuotes();
       }).catch(function () {
-        if (tok === pageTok) failPage('摘录没能加载，请刷新重试。');
+        if (tok === pageTok) failPage((full ? '整场记录' : '摘录') + '没能加载，请刷新重试。');
       });
       return;
     }
-    // 全站搜索跳到某段摘录时，放开筛选并保证目标那一条已经渲染出来
+
+    // 两个数据源都不改：整场时临时组装成同构卡片数组，精选时直接用 D.quotes
+    var all = full ? rhythmAsQuotes(AR.rows) : D.quotes;
     var focusId = parseHash().q.focus || '';
-    var focusQ = focusId ? D.quotes.filter(function (x) { return x.id === focusId; })[0] : null;
+    var focusQ = focusId ? all.filter(function (x) { return x.id === focusId; })[0] : null;
     if (focusQ) { state.tag = '全部'; state.qs = 'all'; }
+
     var tags = ['全部'];
     var counts = {};
-    D.quotes.forEach(function (q) {
+    all.forEach(function (q) {
       qTags(q).forEach(function (t) {
         if (tags.indexOf(t) < 0) tags.push(t);
         counts[t] = (counts[t] || 0) + 1;
       });
     });
-    // 标签会随内容增长，按条数降序排（同数按名称），「全部」固定首位
     tags = ['全部'].concat(tags.slice(1).sort(function (a, b) {
       return (counts[b] - counts[a]) || a.localeCompare(b, 'zh');
     }));
-
     var chips = tags.map(function (t) {
-      var n = t === '全部' ? D.quotes.length : counts[t];
+      var n = t === '全部' ? all.length : counts[t];
       return '<button class="chip' + (t === state.tag ? ' on' : '') + '" data-tag="' + esc(t) + '"' +
         (t === '全部' ? '' : tagStyle(t)) + '>' +
         esc(t) + '<span class="n">' + n + '</span></button>';
     }).join('');
 
-    var sess = D.sessions.filter(function (s) {
-      return D.quotes.some(function (q) { return q.s === s.id; });
-    }).reverse();
-    var schips = '<button class="chip' + (state.qs === 'all' ? ' on' : '') + '" data-s="all">全部<span class="n">' + D.quotes.length + '</span></button>' +
-      sess.map(function (s) {
-        var n = D.quotes.filter(function (q) { return q.s === s.id; }).length;
-        return '<button class="chip' + (state.qs === String(s.id) ? ' on' : '') + '" data-s="' + esc(s.id) + '">' +
-          esc(s.date.replace('-', '.')) + '<span class="n">' + n + '</span></button>';
-      }).join('');
+    var scopeBar = '<div class="filters" id="scopeBar">' +
+      '<button class="chip' + (full ? '' : ' on') + '" data-scope="pick">精选</button>' +
+      '<button class="chip' + (full ? ' on' : '') + '" data-scope="full">整场</button>' +
+      '<span class="scopehint">' + (full
+        ? '完整逐字稿按时间顺序排列；她回应过的 SC / 弹幕挂在对应段落，其余按时间散装'
+        : '从全场挑出的段落，中日对照，按话题分类') + '</span></div>';
+
+    var extra = '';
+    if (full) {
+      var kinds = [['all', '全部'], ['reply', '有回应'], ['free', '散装逐字稿']];
+      extra = '<div class="filters" id="kindBar">' + kinds.map(function (x) {
+        return '<button class="chip' + (state.rhFilter === x[0] ? ' on' : '') +
+          '" data-kind="' + x[0] + '">' + x[1] + '</button>';
+      }).join('') + '</div>';
+    } else {
+      var sess = D.sessions.filter(function (s) {
+        return all.some(function (q) { return q.s === s.id; });
+      }).reverse();
+      var schips = '<button class="chip' + (state.qs === 'all' ? ' on' : '') + '" data-s="all">全部<span class="n">' + all.length + '</span></button>' +
+        sess.map(function (s) {
+          var n = all.filter(function (q) { return q.s === s.id; }).length;
+          return '<button class="chip' + (state.qs === String(s.id) ? ' on' : '') + '" data-s="' + esc(s.id) + '">' +
+            esc(s.date.replace('-', '.')) + '<span class="n">' + n + '</span></button>';
+        }).join('');
+      extra = '<div class="filters" id="sfilters"><span class="flabel">场次</span>' + schips + '</div>';
+    }
 
     app.innerHTML =
       '<section class="hero hero-sm">' +
         '<div class="hero-copy">' +
-          '<div class="kicker">TRANSCRIPT EXCERPTS</div>' +
-          '<h1>摘录<span class="thin">，</span><span class="accent">' + D.meta.quoteCount + '</span> 段</h1>' +
-          '<p class="lead">从 ' + num(D.meta.total) + ' 条记录里挑出的 ' + D.meta.quoteCount + ' 段，' +
-          '中日对照，按话题分类。每段都标出引出它的那条 SC，她的话原样保留，措辞不做润色。</p>' +
+          '<div class="kicker">' + (full ? 'ONE STREAM, EVERY BEAT' : 'TRANSCRIPT EXCERPTS') + '</div>' +
+          '<h1>' + (full
+            ? '整场<span class="thin">，</span><span class="accent">' + AR.rows.total + '</span> 句'
+            : '摘录<span class="thin">，</span><span class="accent">' + all.length + '</span> 段') + '</h1>' +
+          '<p class="lead">' + (full
+            ? esc(AR.rows.title) + ' 全量逐字稿按原时间顺序排列，一条不落。她读到／回应的 '
+              + AR.rows.scCount + ' 条 SC 与 ' + (AR.rows.dmCount || 0) + ' 条弹幕挂在对应段落；其余按时间散装。'
+            : '从 ' + num(D.meta.total) + ' 条记录里挑出的 ' + all.length + ' 段，中日对照，按话题分类。') +
+          '</p>' +
         '</div>' +
       '</section>' +
-      '<div class="filters" id="filters">' + chips + '</div>' +
-      '<div class="filters" id="sfilters"><span class="flabel">场次</span>' + schips + '</div>' +
+      scopeBar + '<div class="filters" id="filters">' + chips + '</div>' + extra +
       '<div class="qlist" id="qlist"></div>' +
-      '<div class="qmore" id="qmore"></div>';
+      '<div class="qmore" id="qmore"><div id="qSentinel" class="qsentinel"></div></div>';
 
+    document.getElementById('scopeBar').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip');
+      if (!b) return;
+      state.qScope = b.getAttribute('data-scope');
+      state.tag = '全部'; state.qs = 'all'; state.rhFilter = 'all';
+      renderQuotes();
+    });
     document.getElementById('filters').addEventListener('click', function (e) {
       var b = e.target.closest('.chip');
       if (!b) return;
@@ -1074,20 +1134,26 @@
       });
       renderQuoteList(true);
     });
-    document.getElementById('sfilters').addEventListener('click', function (e) {
+    var kindBar = document.getElementById('kindBar');
+    if (kindBar) kindBar.addEventListener('click', function (e) {
+      var b = e.target.closest('.chip');
+      if (!b) return;
+      state.rhFilter = b.getAttribute('data-kind');
+      document.querySelectorAll('#kindBar .chip').forEach(function (c) { c.classList.toggle('on', c === b); });
+      renderQuoteList(true);
+    });
+    var sfilters = document.getElementById('sfilters');
+    if (sfilters) sfilters.addEventListener('click', function (e) {
       var b = e.target.closest('.chip');
       if (!b) return;
       state.qs = b.getAttribute('data-s');
-      document.querySelectorAll('#sfilters .chip').forEach(function (c) {
-        c.classList.toggle('on', c.getAttribute('data-s') === state.qs);
-      });
+      document.querySelectorAll('#sfilters .chip').forEach(function (c) { c.classList.toggle('on', c === b); });
       renderQuoteList(true);
     });
     renderQuoteList(true);
     if (focusQ) {
-      state.qShown = Math.max(QBATCH, D.quotes.indexOf(focusQ) + 1);
+      state.qShown = Math.max(QBATCH, all.indexOf(focusQ) + 1);
       renderQuoteList(false);
-      // route() 末尾会把页面滚回顶部，等下一帧再落到目标摘录上
       requestAnimationFrame(function () {
         var el = document.getElementById(focusId);
         if (el) { el.classList.add('hit'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
@@ -1096,132 +1162,34 @@
     setFoot();
   }
 
-  /* ---------- 节奏：完整逐字稿按时间排列，部分段落挂 SC 引用 ----------
-     主线是全部逐字稿，严格按原顺序；她回应 SC 的段落把 SC 作被引用评论放卡头，
-     她的话缩进成跟帖。不连续的回应拆成多张卡、各自留在原时间位置，
-     没有对应的 SC / 逐字稿按时间散装，都不打断逐字稿的相对顺序。 */
-
-  function renderRhythm() {
-    var tok = pageTok;
-    if (!AR.rows) {
-      loadingPage('ONE STREAM, EVERY BEAT', '节奏', '正在载入整场记录…');
-      loadRhythm().then(function () {
-        if (tok === pageTok) renderRhythm();
-      }).catch(function () {
-        if (tok === pageTok) failPage('整场记录没能加载，请刷新重试。');
+  // 引用数组：老条目只有 sc / dm 各一条，新条目（含节奏卡）用 refs 带多条。
+  // 统一从这里取，卡片、复制、卡片图、时间线、搜索都用同一口径。
+  function quoteRefs(q) {
+    if (q && q.refs && q.refs.length) {
+      return q.refs.map(function (r) {
+        return { kind: r.kind === 'dm' ? 'dm' : 'sc', name: r.name || '',
+                 text: r.text || '', price: r.price || 0, t: r.t || '' };
       });
-      return;
     }
-    var R = AR.rows;
-    var beats = R.beats || [];
-    if (!beats.length) { failPage('这场还没有节奏数据。'); return; }
-
-    var kinds = [['all', '全部'], ['reply', '有回应'],
-                 ['free', '散装逐字稿'], ['quote', '已摘录']];
-    function scRow(s) {
-      return '<div class="qsc"><b>' + esc(s.name || '观众') +
-        '<span class="rh-price">¥' + (s.price || 0) + '</span></b><p>' + esc(s.text) + '</p></div>';
-    }
-    function post(l) {
-      return '<div class="qpost">' +
-        '<a class="qt" href="#/archive/' + encodeURIComponent(R.session) + '?t=' +
-          encodeURIComponent(l.t) + '" title="在原稿中定位">' + esc(l.t) + '</a>' +
-        '<div class="qpc">' +
-          '<p class="jp">' + esc(l.jp) + '</p>' +
-          (l.zh ? '<p class="zh">' + esc(l.zh) + '</p>' : '') +
-        '</div></div>';
-    }
-    function card(c) {
-      var hs = c.scs.map(scRow).join('');
-      var posts = c.lines.map(post).join('');
-      var head = (hs ? '<div class="rh-refs">' + hs + '</div>' : '') +
-        (c.note ? '<div class="rh-note">' + esc(c.note) + '</div>' : '');
-      return '<article class="quote rh-card rh-' + c.kind + '" id="' + c.id + '">' +
-        '<div class="qhead">' +
-          '<span class="tag"' + tagStyle(c.tag) + '>' + esc(c.tag) + '</span>' +
-          '<h3 class="qtitle">' + esc(c.title) + '</h3>' +
-          '<span class="rh-range">' + esc(c.t) + ' — ' + esc(c.end) + '</span>' +
-        '</div>' +
-        '<div class="qbody">' + head +
-          (posts ? '<div class="qthread on">' + posts + '</div>' : '') +
-        '</div></article>';
-    }
-
-    function paint() {
-      var box = document.getElementById('rhList');
-      if (!box) return;
-      var needle = state.rh.trim();
-      var list = beats.filter(function (c) {
-        if (state.rhFilter === 'reply' && c.kind !== 'reply') return false;
-        if (state.rhFilter === 'free' && c.kind !== 'free') return false;
-        if (state.rhFilter === 'quote' && !c.quote) return false;
-        if (!needle) return true;
-        var hay = [c.title].concat(c.lines.map(function (l) { return l.jp + ' ' + l.zh; }))
-          .concat(c.scs.map(function (s) { return s.name + ' ' + s.text; })).join('\n');
-        return hay.toLowerCase().indexOf(needle.toLowerCase()) >= 0;
-      });
-      state.rhList = list;
-      box.innerHTML = list.map(card).join('') ||
-        '<div class="empty">这个筛选条件下没有内容。</div>';
-      var more = document.getElementById('rhMore');
-      if (more) more.innerHTML = '<span class="mhint">' + list.length + ' 段 · ' +
-        R.total + ' 条逐字稿全部在内</span>';
-      var cnt = document.getElementById('rhCount');
-      if (cnt) cnt.textContent = '共 ' + list.length + ' 段';
-    }
-
-    app.innerHTML =
-      '<section class="hero hero-sm">' +
-        '<div class="hero-copy">' +
-          '<div class="kicker">ONE STREAM, EVERY BEAT</div>' +
-          '<h1>节奏<span class="thin">，</span><span class="accent">' + R.total + '</span> 句</h1>' +
-          '<p class="lead">' + esc(R.title) + ' 完整逐字稿按原时间顺序排列，一条不落。' +
-          '她读到的 SC 放在所回应段落的卡头作引用，没念到的不收；' +
-          '其余逐字稿按时间散装，不打断顺序。共 ' + R.total + ' 条逐字稿、' + R.scCount + ' 条读到的 SC。</p>' +
-        '</div>' +
-      '</section>' +
-      '<div class="filters" id="rhKinds">' + kinds.map(function (x) {
-        return '<button class="chip' + (state.rhFilter === x[0] ? ' on' : '') +
-          '" data-k="' + x[0] + '">' + x[1] + '</button>';
-      }).join('') +
-        '<input class="rh-search" id="rhSearch" type="search" placeholder="在本场找原句或 SC…" value="' +
-        esc(state.rh) + '" aria-label="在本场搜索">' +
-        '<span class="rh-count" id="rhCount"></span>' +
-      '</div>' +
-      '<div class="qlist" id="rhList"></div>' +
-      '<div class="qmore" id="rhMore"></div>';
-
-    document.getElementById('rhKinds').addEventListener('click', function (e) {
-      var b = e.target.closest('.chip');
-      if (!b) return;
-      state.rhFilter = b.getAttribute('data-k');
-      document.querySelectorAll('#rhKinds .chip').forEach(function (c) {
-        c.classList.toggle('on', c === b);
-      });
-      paint();
-    });
-    document.getElementById('rhSearch').addEventListener('input', function (e) {
-      state.rh = e.target.value;
-      paint();
-    });
-    paint();
-    setFoot();
+    var out = [];
+    if (q && q.sc) out.push({ kind: 'sc', name: q.sc.name || '', text: q.sc.text || '' });
+    if (q && q.dm) out.push({ kind: 'dm', name: q.dm.name || '', text: q.dm.text || '' });
+    return out;
   }
-
-  // 摘录的引用块：老条目只有 sc，新条目可能是 dm（弹幕），一条只带一种
   function quoteRef(q) {
-    if (q.sc) return { kind: 'sc', name: q.sc.name || '', text: q.sc.text || '' };
-    if (q.dm) return { kind: 'dm', name: q.dm.name || '', text: q.dm.text || '' };
-    return null;
+    var refs = quoteRefs(q);
+    return refs.length ? refs[0] : null;
   }
   function refBlock(q) {
-    var r = quoteRef(q);
-    if (!r) return '';
-    var dm = r.kind === 'dm';
-    return '<div class="qsc' + (dm ? ' qdm' : '') + '">' +
-      (r.name || dm ? '<b>' + esc(r.name || '观众') + (dm ? '<span class="qk">弹幕</span>' : '') + '</b>' : '') +
-      '<p>' + esc(r.text) + '</p>' +
-    '</div>';
+    return quoteRefs(q).map(function (r) {
+      var dm = r.kind === 'dm';
+      var price = r.price ? '<span class="qprice">¥' + r.price + '</span>' : '';
+      return '<div class="qsc' + (dm ? ' qdm' : '') + '">' +
+        '<b>' + esc(r.name || '观众') + price +
+          (dm ? '<span class="qk">弹幕</span>' : '') + '</b>' +
+        '<p>' + esc(r.text) + '</p>' +
+      '</div>';
+    }).join('');
   }
 
   function quoteCard(q) {
@@ -1399,33 +1367,50 @@
     img.src = 'brand/scene-girls.webp';
   }
 
+  // 触底自动加载：不用按钮，滚动到接近底部就再铺一批。
+  // 监听挂在 live.onScroll 上，切页时 stopLive 统一解绑，避免旧页面继续追加 DOM。
+  function watchMore() {
+    if (live.onScroll) { window.removeEventListener('scroll', live.onScroll); live.onScroll = 0; }
+    live.onScroll = function () {
+      var list = state.qList || [];
+      if (state.qShown >= list.length) return;
+      var doc = document.documentElement;
+      var bottom = (window.scrollY || doc.scrollTop || 0) + window.innerHeight;
+      var height = Math.max(doc.scrollHeight, document.body ? document.body.scrollHeight : 0);
+      if (bottom >= height - 400) {
+        state.qShown += QBATCH;
+        renderQuoteList(false);
+      }
+    };
+    window.addEventListener('scroll', live.onScroll, { passive: true });
+  }
+
   // reset=true 时回到第一批：切换筛选后从顶部重新铺，避免停在一个空的批次上
   function renderQuoteList(reset) {
     if (reset) state.qShown = QBATCH;
-    var list = D.quotes.filter(function (q) {
-      return (state.tag === '全部' || qTags(q).indexOf(state.tag) >= 0) &&
-             (state.qs === 'all' || String(q.s) === state.qs);
+    var all = state.qScope === 'full' ? rhythmAsQuotes(AR.rows || {}) : D.quotes;
+    var list = all.filter(function (q) {
+      if (state.tag !== '全部' && qTags(q).indexOf(state.tag) < 0) return false;
+      if (state.qScope === 'full') {
+        if (state.rhFilter !== 'all' && q.kind !== state.rhFilter) return false;
+      } else if (state.qs !== 'all' && String(q.s) !== state.qs) return false;
+      return true;
     });
     state.qList = list;
     var shown = list.slice(0, state.qShown);
     var box = document.getElementById('qlist');
     var more = document.getElementById('qmore');
     if (!box || !more) return;
-
     box.innerHTML = shown.map(quoteCard).join('') ||
-      '<div class="empty">这个筛选组合下还没有摘录。</div>';
-
-    if (list.length > state.qShown) {
-      more.innerHTML = '<button class="morebtn" id="qloadmore">加载更多 ↓</button>' +
-        '<span class="mhint">已显示 ' + shown.length + ' / ' + list.length + ' 段</span>';
-      document.getElementById('qloadmore').addEventListener('click', function () {
-        state.qShown += QBATCH;
-        renderQuoteList(false);
-      });
-    } else {
-      more.innerHTML = list.length ? '<span class="mhint">已全部显示 · 共 ' + list.length + ' 段</span>' : '';
-    }
+      '<div class="empty">这个筛选组合下还没有内容。</div>';
+    more.innerHTML = '<span class="mhint">' +
+      (list.length > state.qShown
+        ? '已显示 ' + shown.length + ' / ' + list.length + ' 段 · 继续下滑自动加载'
+        : '已全部显示 · 共 ' + list.length + ' 段') + '</span>' +
+      '<div id="qSentinel" class="qsentinel"></div>';
+    watchMore();
   }
+
 
   app.addEventListener('click', function (e) {
     var cardBtn = e.target.closest('.mkcard');

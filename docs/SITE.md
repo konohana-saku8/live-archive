@@ -17,7 +17,7 @@ package.json              Vite 构建依赖（vite 本身）
 vite.config.mjs           dev server / dist 构建；启动时自动调 tools/gen_data.py
 site/
   index.html              {{TITLE}} {{DESC}} {{STREAMER}} 构建时替换，版本号构建后注入
-  assets/app.js           ES module；前端 hash 路由：#/ #/diary #/quotes #/rhythm #/timeline #/archive #/about
+  assets/app.js           ES module；前端 hash 路由：#/ #/diary #/quotes #/timeline #/archive #/about（#/rhythm 重定向到摘录页整场视图）
   assets/style.css
   brand/                 头像、favicon、氛围底图、首页夜景（--scene 切换）与预模糊远景
   data/profile.json       主播名 / 标题 / 描述
@@ -26,8 +26,8 @@ site/
   data/quotes.json        摘录（编辑器 / 人工挑，按 session + sel 或 date + t 挂场次）
   data/tags.json          tag 注册表（编辑器写）
   data/overrides.json     逐字稿单行覆盖（编辑器 / 人工写，含 orig / why）
-  data/rhythm.json        节奏页整场数据（tools/gen_rhythm.py 生成；完整逐字稿按原时间顺序，回应段落挂 SC 引用，散装按时间插入）
-  data/rhythm_links.json  手工指定的「哪些逐字稿回应哪些 SC」；lines 可跨段，生成时按连续区间拆开、各自留在原时间位置
+  data/rhythm.json        摘录页「整场」视图数据（tools/gen_rhythm.py 生成；完整逐字稿按原时间顺序，回应段落挂 refs 引用，散装按时间插入）
+  data/rhythm_links.json  手工指定的「哪些逐字稿回应哪些 SC / 弹幕」；sc 填 SC id，dm 填手工核对过的 name/text/t（不收翻译弹幕）；lines 可跨段，生成时按连续区间拆开、各自留在原时间位置
   data/sessions/*.json    每场直播一份，脚本导出，**禁止手改**
   data/subs/*.json        双语字幕轨（进 git，随站点发布，按场次分文件）
 editor/                   本地编辑器（Electron 壳 + Python 后端 + 页面）
@@ -40,7 +40,7 @@ tools/
   overrides.py            逐行覆盖的读取与套用（export / export_subs 共用）
   export.py               db → site/data/sessions/
   export_dynamics.py      live-capture 的 dynamics 表 → site/data/dynamics.json（默认 ssh 只读手机库）
-  gen_rhythm.py           db + 手工映射 → site/data/rhythm.json（逐字稿全量按时间顺序，回应段落挂 SC 引用；改场次改 KEY）
+  gen_rhythm.py           db + 手工映射 → site/data/rhythm.json（逐字稿全量按时间顺序，回应段落挂统一 refs：SC + 手工核对的弹幕；改场次改 KEY）
   gen_data.py             site/data → .build/：data.js、版本哈希、subs、静态资源、rhythm.json
   export_subs.py          db → site/data/subs/（gen_data.py 调用，再复制进 .build/public/subs）
   build.py                调 Vite 构建 dist/（等价于 npm run build）

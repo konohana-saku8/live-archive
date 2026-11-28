@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
-"""生成整场节奏页数据：完整逐字稿按时间顺序排列，部分段落挂 SC 引用。
+"""生成整场节奏数据：完整逐字稿按时间顺序排列，部分段落挂观众发言引用。
 
 源数据：
   site/data/sessions/<key>.json   逐字稿（已过 ASR / 单行校正）
-  site/data/rhythm_links.json     手工指定的「哪些逐字稿在回应哪些 SC」
+  site/data/rhythm_links.json     手工指定的「哪些逐字稿在回应哪些 SC / 弹幕」
   site/data/quotes.json           摘录标题（同一段直接沿用）
   枢纽库 sc_message                观众 SC 原文（手机 live-capture 增量拉取后落在本机）
 
 口径（2026-11-28 定稿）：
-  - 主线是全部逐字稿，严格按原顺序，一条不重不漏；不因 SC 的时间挪动任何一句；
+  - 主线是全部逐字稿，严格按原顺序，一条不重不漏；不因观众发言的时间挪动任何一句；
   - 手工映射里的 lines 可能不连续，按「连续区间」拆成多张卡片，各自留在自己的时间位置，
-    同一条 SC 可以在多个区间上作为引用出现；
-  - 只有她实际读到／回应的 SC 才作为引用出现；没念到的 SC 不进页面；
-  - 没有对应 SC 的逐字稿按连续区间散装；
-  - 不读弹幕、不记上屏时间——只保留观众发言与她自己的话；
-  - SC 的发出时间只用于排序同一卡内的多条引用，不决定卡片位置。
+    同一条引用可以在多个区间上出现；
+  - 只有她实际读到／回应的发言才作为引用：SC 按映射里的 id，弹幕按映射里手工核对的
+    name/text/t；把她的话译出来的翻译弹幕不算她的回应；
+  - 每条卡片的 refs 是统一引用数组，元素形如 {kind:'sc'|'dm', name, text, ...}，
+    一段可以挂多条 SC 与多条弹幕；
+  - 没有对应引用的逐字稿按连续区间散装；没念到的 SC 不进页面；
+  - 只保留观众发言与她自己的话，不记上屏时间。
 
 输出 site/data/rhythm.json；内容没变就不重写。
 """
@@ -97,6 +99,13 @@ def main():
                 return q.get('title') or '', q.get('tag') or ''
         return '', ''
 
+    def dm_ref(d):
+        """弹幕引用：手工核对过的 name/text/t，不查库，避免把翻译弹幕混进来。"""
+        return {
+            'kind': 'dm', 'name': str(d.get('name') or '观众'),
+            'text': str(d.get('text') or ''), 't': str(d.get('t') or ''),
+        }
+
     cards = []
     paired = set()
     used_sc = set()
@@ -106,9 +115,11 @@ def main():
         if not idxs:
             continue
         used_sc.update(ids)
+        refs = [dict(scs[s], kind='sc') for s in sorted(ids, key=lambda x: scs[x]['start'])]
+        refs += [dm_ref(d) for d in p.get('dm', [])]
         top = None
-        if ids:
-            top = sorted((scs[s] for s in ids), key=lambda x: x['price'], reverse=True)[0]
+        if refs:
+            top = sorted(refs, key=lambda x: x.get('price', 0), reverse=True)[0]
         runs = runs_of(idxs)
         for n, run in enumerate(runs):
             paired.update(run)
@@ -116,18 +127,17 @@ def main():
             qt, qtag = quote_title(set(run))
             title, tag, is_quote = qt, qtag, bool(qt)
             if not title and top:
-                title, tag = clip(top['text'], 26) or 'SC 回应', 'SC'
+                title, tag = clip(top['text'], 26) or '回应', top['kind'].upper()
             if not title:
                 title, tag = clip(recs[run[0]][2] or recs[run[0]][1], 26) or '现场', '现场'
             if n:  # 同一映射的后续区间：留在自己的时间位置，标「续」
                 title += '（续）'
             cards.append({
-                'kind': 'reply' if ids else 'free',
+                'kind': 'reply' if refs else 'free',
                 't': sec_of(sess['dateLong'], lines[0]['t']),
                 'end': sec_of(sess['dateLong'], lines[-1]['t']),
                 'title': title, 'tag': tag, 'note': p.get('note', ''),
-                'quote': is_quote,
-                'scs': [scs[s] for s in sorted(ids, key=lambda x: scs[x]['start'])],
+                'quote': is_quote, 'refs': refs,
                 'lines': lines,
             })
 
@@ -147,7 +157,7 @@ def main():
         cards.append({
             'kind': 'free', 't': ch[0][1], 'end': ch[-1][1],
             'title': clip(recs[ch[0][0]][2] or recs[ch[0][0]][1], 26) or '现场',
-            'tag': '现场', 'note': '', 'quote': False, 'scs': [], 'lines': lines,
+            'tag': '现场', 'note': '', 'quote': False, 'refs': [], 'lines': lines,
         })
 
     # SC 卡与同时刻的回应卡：SC 在前；逐字稿之间的相对顺序不受影响
@@ -155,9 +165,10 @@ def main():
                               c['lines'][0]['i'] if c['lines'] else -1))
     all_lines = [l['i'] for c in cards for l in c['lines']]
     assert all_lines == list(range(len(recs))), '逐字稿必须按原顺序全量覆盖'
-    used_ids = {s['id'] for c in cards for s in c['scs']}
+    used_ids = {r['id'] for c in cards for r in c['refs'] if r['kind'] == 'sc'}
     assert used_ids == used_sc, 'SC 引用必须与映射一致'
     assert used_ids <= set(scs), 'SC id 不在本场库内'
+    n_dm = sum(1 for c in cards for r in c['refs'] if r['kind'] == 'dm')
 
     for n, c in enumerate(cards, 1):
         c['id'] = 'b%d' % n
@@ -166,7 +177,7 @@ def main():
 
     out = {
         'session': KEY, 'date': sess['date'], 'title': sess['dateLong'],
-        'total': len(recs), 'scCount': len(used_sc), 'beats': cards,
+        'total': len(recs), 'scCount': len(used_sc), 'dmCount': n_dm, 'beats': cards,
     }
     path = os.path.join(site_dir, 'data', 'rhythm.json')
     text = json.dumps(out, ensure_ascii=False, indent=1) + '\n'
@@ -180,8 +191,8 @@ def main():
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(text)
     n_reply = sum(1 for c in cards if c['kind'] == 'reply')
-    print('rhythm: %d 卡片（%d 回应段 / %d 散装逐字稿） / %d 条逐字稿 / %d 条读到的 SC → %s'
-          % (len(cards), n_reply, len(cards) - n_reply, len(recs), len(used_sc), path))
+    print('rhythm: %d 卡片（%d 回应段 / %d 散装逐字稿） / %d 条逐字稿 / %d 条读到的 SC / %d 条回应的弹幕 → %s'
+          % (len(cards), n_reply, len(cards) - n_reply, len(recs), len(used_sc), n_dm, path))
     return 0
 
 

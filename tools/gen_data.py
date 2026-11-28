@@ -475,7 +475,7 @@ def write_side(public_dir, q_out, diary_out):
 
 
 def write_rhythm(site_dir, public_dir):
-    """节奏页数据单独成文件，返回概况与指纹；没有源数据时页面给空态。"""
+    """摘录页「整场」视图的数据单独成文件，返回概况与指纹；没有源数据时页面给空态。"""
     src = os.path.join(site_dir, 'data', 'rhythm.json')
     info = {'rhythmVer': '', 'beatCount': 0, 'rhythmSc': 0, 'rhythmDm': 0}
     if not os.path.exists(src):
