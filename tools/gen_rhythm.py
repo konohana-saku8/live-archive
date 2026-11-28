@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
-"""把整场逐字稿按「观众发言 → 她的回应」生成节奏页数据。
+"""生成整场节奏页数据：完整逐字稿按时间顺序排列，部分段落挂 SC 引用。
 
 源数据：
   site/data/sessions/<key>.json   逐字稿（已过 ASR / 单行校正）
-  site/data/rhythm_links.json     手工指定的 SC → 回应逐字稿关系
+  site/data/rhythm_links.json     手工指定的「哪些逐字稿在回应哪些 SC」
   site/data/quotes.json           摘录标题（同一段直接沿用）
   枢纽库 sc_message                观众 SC 原文（手机 live-capture 增量拉取后落在本机）
 
-口径：
-  - 只处理配置里指定的那一场（默认 2026-11-28_0017），不扫全库；
-  - 有对应关系的 SC 与逐字稿合成一张 reply 卡片，她的回应缩进成跟帖；
-  - 没有对应的 SC 与逐字稿按时间顺序散装成 sc / free 卡片；
-  - 逐字稿全量纳入，每条只出现一次；SC 也只出现一次（配对或散装）；
+口径（2026-11-28 定稿）：
+  - 主线是全部逐字稿，严格按原顺序，一条不重不漏；不因 SC 的时间挪动任何一句；
+  - 手工映射里的 lines 可能不连续，按「连续区间」拆成多张卡片，各自留在自己的时间位置，
+    同一条 SC 可以在多个区间上作为引用出现；
+  - 没有对应逐字稿的 SC 按 SC 时间作为独立卡片插入时间线（不打断逐字稿的相对顺序）；
+  - 没有对应 SC 的逐字稿按连续区间散装；
   - 不读弹幕、不记上屏时间——只保留观众发言与她自己的话。
 
 输出 site/data/rhythm.json；内容没变就不重写。
@@ -25,9 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 
 KEY = '2026-11-28_0017'
-SC_GAP = 30              # 秒：散装 SC 相隔不超过这个就合并成一张卡
 FREE_GAP = 90            # 秒：散装逐字稿相隔超过这个就另起一张卡
-
 
 
 def load_json(path):
@@ -45,6 +44,17 @@ def sec_of(date_long, t):
 def clip(s, n):
     s = ' '.join(str(s or '').split())
     return s if len(s) <= n else s[:n] + '…'
+
+
+def runs_of(indices):
+    """把任意索引列表拆成连续区间（防止跨时间段被合并挪位）。"""
+    out = []
+    for i in sorted(set(indices)):
+        if out and i == out[-1][-1] + 1:
+            out[-1].append(i)
+        else:
+            out.append([i])
+    return out
 
 
 def main():
@@ -90,47 +100,47 @@ def main():
     paired = set()
     used_sc = set()
     for p in links.get('pairs', []):
-        idxs = sorted({int(i) for i in p['lines'] if 0 <= int(i) < len(recs)})
+        idxs = [int(i) for i in p['lines'] if 0 <= int(i) < len(recs)]
+        ids = [s for s in p.get('sc', []) if s in scs]
         if not idxs:
             continue
-        ids = [s for s in p.get('sc', []) if s in scs]
-        paired.update(idxs)
         used_sc.update(ids)
-        title = p.get('title') or ''
-        tag = p.get('tag') or ''
-        if not title:
-            title, tag = quote_title(set(idxs))
-        if not title and ids:
+        top = None
+        if ids:
             top = sorted((scs[s] for s in ids), key=lambda x: x['price'], reverse=True)[0]
-            title, tag = clip(top['text'], 26) or 'SC 回应', 'SC'
-        if not title:
-            title, tag = clip(recs[idxs[0]][2] or recs[idxs[0]][1], 26) or '现场', '现场'
-        lines = [line(i) for i in idxs]
-        times = [sec_of(sess['dateLong'], x['t']) for x in lines]
-        times += [scs[s]['start'] for s in ids]
+        runs = runs_of(idxs)
+        for n, run in enumerate(runs):
+            paired.update(run)
+            lines = [line(i) for i in run]
+            qt, qtag = quote_title(set(run))
+            title, tag, is_quote = qt, qtag, bool(qt)
+            if not title and top:
+                title, tag = clip(top['text'], 26) or 'SC 回应', 'SC'
+            if not title:
+                title, tag = clip(recs[run[0]][2] or recs[run[0]][1], 26) or '现场', '现场'
+            if n:  # 同一映射的后续区间：留在自己的时间位置，标「续」
+                title += '（续）'
+            cards.append({
+                'kind': 'reply' if ids else 'free',
+                't': sec_of(sess['dateLong'], lines[0]['t']),
+                'end': sec_of(sess['dateLong'], lines[-1]['t']),
+                'title': title, 'tag': tag, 'note': p.get('note', ''),
+                'quote': is_quote,
+                'scs': [scs[s] for s in sorted(ids, key=lambda x: scs[x]['start'])],
+                'lines': lines,
+            })
+
+    # 没有对应逐字稿的 SC：一条一张卡，按 SC 时间插入时间线
+    for s in scs.values():
+        if s['id'] in used_sc:
+            continue
         cards.append({
-            'kind': 'reply' if ids else 'free',
-            't': min(times), 'end': max(times),
-            'title': title, 'tag': tag, 'note': p.get('note', ''),
-            'scs': [scs[s] for s in sorted(ids, key=lambda x: scs[x]['start'])],
-            'lines': lines,
+            'kind': 'sc', 't': s['start'], 'end': s['start'],
+            'title': clip(s['text'], 26) or '观众留言', 'tag': 'SC', 'note': '',
+            'quote': False, 'scs': [s], 'lines': [],
         })
 
-    # 没有对应的 SC：时间相近的合并成一张散装卡片
-    loose = [s for s in scs.values() if s['id'] not in used_sc]
-    clusters = []
-    for s in loose:
-        if not clusters or s['start'] - clusters[-1][-1]['start'] > SC_GAP:
-            clusters.append([])
-        clusters[-1].append(s)
-    for cl in clusters:
-        cards.append({
-            'kind': 'sc', 't': cl[0]['start'], 'end': cl[-1]['start'],
-            'title': clip(cl[0]['text'], 26) or '观众留言', 'tag': 'SC', 'note': '',
-            'scs': cl, 'lines': [],
-        })
-
-    # 没有对应的逐字稿：连续段按时间散装
+    # 没有对应 SC 的逐字稿：连续区间按时间散装
     free_idx = [i for i in range(len(recs)) if i not in paired]
     chunks = []
     for i in free_idx:
@@ -144,10 +154,16 @@ def main():
         cards.append({
             'kind': 'free', 't': ch[0][1], 'end': ch[-1][1],
             'title': clip(recs[ch[0][0]][2] or recs[ch[0][0]][1], 26) or '现场',
-            'tag': '现场', 'note': '', 'scs': [], 'lines': lines,
+            'tag': '现场', 'note': '', 'quote': False, 'scs': [], 'lines': lines,
         })
 
-    cards.sort(key=lambda c: (c['t'], c['kind'] != 'reply'))
+    # SC 卡与同时刻的回应卡：SC 在前；逐字稿之间的相对顺序不受影响
+    cards.sort(key=lambda c: (c['t'], 0 if c['kind'] == 'sc' else 1,
+                              c['lines'][0]['i'] if c['lines'] else -1))
+    all_lines = [l['i'] for c in cards for l in c['lines']]
+    assert all_lines == list(range(len(recs))), '逐字稿必须按原顺序全量覆盖'
+    assert len({s['id'] for c in cards for s in c['scs']}) == len(scs), 'SC 重复或缺失'
+
     for n, c in enumerate(cards, 1):
         c['id'] = 'b%d' % n
         c['t'] = datetime.datetime.fromtimestamp(c['t']).strftime('%H:%M:%S')
@@ -170,7 +186,7 @@ def main():
         f.write(text)
     n_reply = sum(1 for c in cards if c['kind'] == 'reply')
     n_sc = sum(1 for c in cards if c['kind'] == 'sc')
-    print('rhythm: %d 卡片（%d 回应 / %d 散装 SC / %d 散装逐字稿） / %d 条逐字稿 / %d 条 SC → %s'
+    print('rhythm: %d 卡片（%d 回应段 / %d 散装 SC / %d 散装逐字稿） / %d 条逐字稿 / %d 条 SC → %s'
           % (len(cards), n_reply, n_sc, len(cards) - n_reply - n_sc,
              len(recs), len(scs), path))
     return 0

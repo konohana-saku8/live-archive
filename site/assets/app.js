@@ -1096,9 +1096,10 @@
     setFoot();
   }
 
-  /* ---------- 节奏：整场逐字稿与 SC 的回应关系 ----------
-     有对应关系的 SC 与她的话放在一张卡片里：SC 作被引用评论，她的话缩进成跟帖。
-     没有对应的按时间散装。卡片整体按时间顺序排列。 */
+  /* ---------- 节奏：完整逐字稿按时间排列，部分段落挂 SC 引用 ----------
+     主线是全部逐字稿，严格按原顺序；她回应 SC 的段落把 SC 作被引用评论放卡头，
+     她的话缩进成跟帖。不连续的回应拆成多张卡、各自留在原时间位置，
+     没有对应的 SC / 逐字稿按时间散装，都不打断逐字稿的相对顺序。 */
 
   function renderRhythm() {
     var tok = pageTok;
@@ -1121,19 +1122,18 @@
       return '<div class="qsc"><b>' + esc(s.name || '观众') +
         '<span class="rh-price">¥' + (s.price || 0) + '</span></b><p>' + esc(s.text) + '</p></div>';
     }
-    function post(l, s) {
-      var badge = s ? '<span class="rh-lsc">回应这条 · ' + esc(s.name || '观众') + '</span>' : '';
+    function post(l) {
       return '<div class="qpost">' +
         '<a class="qt" href="#/archive/' + encodeURIComponent(R.session) + '?t=' +
           encodeURIComponent(l.t) + '" title="在原稿中定位">' + esc(l.t) + '</a>' +
-        '<div class="qpc">' + badge +
+        '<div class="qpc">' +
           '<p class="jp">' + esc(l.jp) + '</p>' +
           (l.zh ? '<p class="zh">' + esc(l.zh) + '</p>' : '') +
         '</div></div>';
     }
     function card(c) {
       var hs = c.scs.map(scRow).join('');
-      var posts = c.lines.map(function (l) { return post(l, c.kind === 'reply' ? c.scs[0] : null); }).join('');
+      var posts = c.lines.map(post).join('');
       var head = (hs ? '<div class="rh-refs">' + hs + '</div>' : '') +
         (c.note ? '<div class="rh-note">' + esc(c.note) + '</div>' : '');
       return '<article class="quote rh-card rh-' + c.kind + '" id="' + c.id + '">' +
@@ -1155,7 +1155,7 @@
         if (state.rhFilter === 'reply' && c.kind !== 'reply') return false;
         if (state.rhFilter === 'sc' && c.kind !== 'sc') return false;
         if (state.rhFilter === 'free' && c.kind !== 'free') return false;
-        if (state.rhFilter === 'quote' && c.tag === '现场' && c.tag !== '声明') return false;
+        if (state.rhFilter === 'quote' && !c.quote) return false;
         if (!needle) return true;
         var hay = [c.title].concat(c.lines.map(function (l) { return l.jp + ' ' + l.zh; }))
           .concat(c.scs.map(function (s) { return s.name + ' ' + s.text; })).join('\n');
@@ -1183,8 +1183,9 @@
         '<div class="hero-copy">' +
           '<div class="kicker">ONE STREAM, EVERY BEAT</div>' +
           '<h1>节奏<span class="thin">，</span><span class="accent">' + R.total + '</span> 句</h1>' +
-          '<p class="lead">' + esc(R.title) + ' 整场按时间顺序排列。有对应的 SC 与她的回应放在同一张卡片里，' +
-          '没有对应的按时间散装；' + R.scCount + ' 条 SC 与 ' + R.total + ' 条逐字稿都在其中。</p>' +
+          '<p class="lead">' + esc(R.title) + ' 完整逐字稿按原时间顺序排列，一条不落。' +
+          '她回应 SC 的段落把那条 SC 放在卡头作引用；散装的 SC 与逐字稿按时间插入，' +
+          '不打断逐字稿顺序。共 ' + R.total + ' 条逐字稿、' + R.scCount + ' 条 SC。</p>' +
         '</div>' +
       '</section>' +
       '<div class="filters" id="rhKinds">' + kinds.map(function (x) {
