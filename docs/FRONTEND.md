@@ -63,6 +63,7 @@
 - **只看 SC**：逐字稿里**没有**精确的 SC 边界（话题 0 只是「打赏/SC」关键词分类，她的回应散落在后续行）。所以 `scBlock()` 用本场 `D.quotes` 里带 `sc` 字段的摘录当 SC 单元：观众原文作引用、她的 `jp/zh` 作跟帖，附「在原稿中定位」深链。数据来源可靠、不靠猜边界。
 - **凌晨场夜景**：`paintTranscript()` 按开播小时 `<6 || >=20` 调 `setNightScene()` 给 body 加 `.is-night`（复用 `home-night.webp`），换路由由 `route()` 统一清除。
 - **首页开播热力图** `heatmapHTML()`：最近 16 周方格，`byDay` 取每天场数定深浅，有直播的格子链到 `#/archive?d=YYYY-MM-DD`。不写「最长连续开播 N 天」（口径同上）。
+- **摘录页只有一个视图**（2026-11-28 用户定稿）：`renderQuotes()` 只读 `quotes.json`（当前 296 条人工摘要）。131 张整场卡因信息量太大已撤下，旧 `#/rhythm` 回到摘录页，旧 `?scope=full` 不再进入整场视图；`rhythm.json` 不发布，前端没有 `rhythmAsQuotes()` / `loadRhythm()` / `AR`。引用仍走 `quoteRefs()`（一段可挂多条 SC / 弹幕），滚动触底加载逻辑不变。列表顺序即 `quotes.json` 文件顺序，按火羽发言时间正序；编辑器列表同序。
 - **换页淡入 / 阅读进度**：`playPageIn()` 给 `#app` 加 `.page-in`（`prefers-reduced-motion` 下跳过）；`updateProgress()` 把滚动比例写到 `#readprog` 的 `scaleX`。两者都在 `index.html` / `style.css` 里有对应节点与样式。
 - 自检脚本 `.state/verify_ui.js`（headless Chrome + CDP）覆盖以上交互与 390 窄屏溢出，改动这部分前端后可跑一遍；`.state/` 不入库。
 

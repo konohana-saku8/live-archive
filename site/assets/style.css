@@ -550,8 +550,7 @@ a.hl .hl-dot{
   margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--line);
   font-size:11.5px;color:var(--dim-2);line-height:1.65;
 }
-/* 摘录页「精选 / 整场」切换 */
-.scopehint{font-size:12px;color:var(--dim-2);line-height:1.5;margin-left:6px}
+/* 摘录里引用 SC 的价格 / 触底加载哨兵 */
 .qprice{margin-left:8px;color:var(--gold);font-weight:400}
 .qsentinel{height:1px;width:100%}
 @media(max-width:760px){
@@ -861,6 +860,9 @@ body.notice-open{overflow:hidden}
 .notice{
   position:fixed;z-index:121;left:50%;top:50%;transform:translate(-50%,-50%);
   width:min(560px,calc(100vw - 32px));
+  /* 三段文案在矮屏会顶出视口，卡片自己滚，别把确认按钮挤到看不见 */
+  max-height:calc(100vh - 32px);overflow:auto;overscroll-behavior:contain;
+  scrollbar-width:thin;
 }
 .notice-card{
   padding:28px 30px 22px;border:1px solid var(--line-strong);border-left:2px solid var(--fire);
@@ -871,6 +873,7 @@ body.notice-open{overflow:hidden}
 .notice-kicker{font:10.5px/1 var(--mono);letter-spacing:.22em;color:var(--fire-soft)}
 .notice-card h2{margin:10px 0 14px;font-size:22px;font-weight:600;letter-spacing:.02em;color:var(--ink)}
 .notice-card p{margin:0;font-size:13px;line-height:2;color:var(--dim)}
+.notice-card p + p{margin-top:10px}
 /* 关键提醒：全篇只高亮这一句，避免整段都是重音反而没有重点 */
 .notice-card .hl{
   font-weight:600;color:#ffe9dc;background:rgba(255,122,69,.16);

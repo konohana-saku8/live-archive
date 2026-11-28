@@ -18,7 +18,9 @@
   - 没有对应引用的逐字稿按连续区间散装；没念到的 SC 不进页面；
   - 只保留观众发言与她自己的话，不记上屏时间。
 
-输出 site/data/rhythm.json；内容没变就不重写。
+输出 site/data/rhythm.json（中间数据，内容没变就不重写）。这些卡已一次性搬进
+site/data/quotes.json（标签「呼吸」、whole:true），编辑器可见可改；gen_data.py
+不再读取本文件，前端也不再有独立整场视图。若需按新映射重建整场卡，要重新同步源文件。
 """
 import datetime
 import json

@@ -297,6 +297,10 @@ def collect(site_dir):
 
     skipped, q_out = [], []
     for q in quotes_raw:
+        # 整场卡已随源文件入库：保留它的 id / refs / lines / whole，不再重编号重选行
+        if q.get('whole'):
+            q_out.append(q)
+            continue
         want_session = (q.get('session') or '').strip()
         if want_session:
             hit = next((s for s in sess_out if s['key'] == want_session), None)
@@ -474,34 +478,14 @@ def write_side(public_dir, q_out, diary_out):
     return q_ver, h.hexdigest()[:10]
 
 
-def write_rhythm(site_dir, public_dir):
-    """摘录页「整场」视图的数据单独成文件，返回概况与指纹；没有源数据时页面给空态。"""
-    src = os.path.join(site_dir, 'data', 'rhythm.json')
-    info = {'rhythmVer': '', 'beatCount': 0, 'rhythmSc': 0, 'rhythmDm': 0}
-    if not os.path.exists(src):
-        return info
-    try:
-        with open(src, encoding='utf-8') as f:
-            data = json.load(f)
-    except (OSError, ValueError) as exc:
-        print('!! 读不到节奏数据（%s），页面会显示空态' % exc, file=sys.stderr)
-        return info
-    txt = _write_json(os.path.join(public_dir, 'rhythm.json'), data)
-    info.update({
-        'rhythmVer': hashlib.sha256(txt.encode('utf-8')).hexdigest()[:10],
-        'beatCount': len(data.get('beats') or []),
-        'rhythmSc': int(data.get('scCount') or 0),
-        'rhythmDm': int(data.get('dmCount') or 0),
-    })
-    return info
-
-
 def home_quotes(sess_out, q_out, limit=24):
     """首页只带固定条数的摘录：最近一场三条 + 一份横跨存档的随机池。
 
     随机池按时间均匀取样，保证「随机一句」不会总落在最近几场；条数固定，
     首页体积就不再随摘录总数增长。
     """
+    # 首页只放人工挑的段落：整场卡带 whole 标记，又长又密，不适合首屏
+    q_out = [q for q in q_out if not q.get('whole')]
     if not q_out:
         return {'latest': [], 'pool': []}
     last_id = sess_out[-1]['id']
@@ -591,7 +575,10 @@ def main():
 
     # 摘录与日记正文同样按需取；首页要用的几句单独挑进 data.js
     quotes_ver, diary_ver = write_side(public_dir, q_out, diary_out)
-    rhythm = write_rhythm(site_dir, public_dir)
+    # 旧版本单独发布过 rhythm.json，构建暂存目录里残留会被 Vite 一起拷进产物
+    stale_rhythm = os.path.join(public_dir, 'rhythm.json')
+    if os.path.exists(stale_rhythm):
+        os.remove(stale_rhythm)
 
     # 场次 / 日记条目上的摘录条数在构建期算好：列表、日历和详情页头部都要显示它，
     # 不能为了一个数字把 quotes.json 拉下来。
@@ -625,15 +612,11 @@ def main():
             'quoteCount': len(q_out),
             'diaryCount': len(diary_out),
             'dynamicCount': len(dynamics_out),
-            'beatCount': rhythm['beatCount'],
-            'rhythmSc': rhythm['rhythmSc'],
-            'rhythmDm': rhythm['rhythmDm'],
             # 逐字稿分片的内容指纹：前端拿它给 records/*.json 打 ?v=
             'recVer': rec_ver,
             # 摘录与日记正文各自的内容指纹：分开取文件，也就能分开失效
             'quotesVer': quotes_ver,
             'diaryVer': diary_ver,
-            'rhythmVer': rhythm['rhythmVer'],
             # 字幕轨概况（场次数 / 块数 / 更新时间 / 最新场次）
             'subs': subs_meta,
         },
@@ -683,8 +666,9 @@ def main():
                  for f in os.listdir(os.path.join(public_dir, 'diary'))) // 1024,
              diary_ver))
     print('subs: %d 场字幕 / %d 块 / %d KB' % (n_subs, n_blocks, sub_bytes // 1024))
-    if rhythm['beatCount']:
-        print('rhythm: %d 节拍 · 指纹 %s' % (rhythm['beatCount'], rhythm['rhythmVer']))
+    n_whole = sum(1 for q in q_out if q.get('whole'))
+    if n_whole:
+        print('整场摘录（标签「呼吸」）: %d 张，已在源 quotes.json 中' % n_whole)
     if skipped:
         print('!! 找不到对应场次的摘录:', ', '.join(skipped))
     if skipped_diary:

@@ -809,11 +809,27 @@ class Handler(BaseHTTPRequestHandler):
             if name or text:
                 entry[kind] = {'name': name, 'text': text}
         i = b.get('i')
+        old = qs[i] if isinstance(i, int) and 0 <= i < len(qs) else {}
+        # 整场卡带构建用的 id / s / whole / refs / lines，表单不编辑这些字段，
+        # 保存时必须原样带走，否则编辑一次就会丢引用、丢锚点、被首页当成普通摘录。
+        for k in ('id', 's', 'whole', 'refs'):
+            if k in old:
+                entry[k] = old[k]
+        if old.get('whole'):
+            entry['lines'] = [{'t': recs[x['i']][0], 'jp': recs[x['i']][1], 'zh': recs[x['i']][2]}
+                              for x in clean]
         if isinstance(i, int) and 0 <= i < len(qs):
             qs[i] = entry
         else:
-            qs.append(entry)
-            i = len(qs) - 1
+            # 新摘录按发言时间插入，保持源文件（也是编辑器列表）的时间正序
+            stamp = (entry.get('date', ''), entry.get('t', ''))
+            pos = len(qs)
+            for j, x in enumerate(qs):
+                if (x.get('date', ''), x.get('t', '')) > stamp:
+                    pos = j
+                    break
+            qs.insert(pos, entry)
+            i = pos
         save_json(QUOTES, qs)
         self._send({'ok': True, 'i': i})
 

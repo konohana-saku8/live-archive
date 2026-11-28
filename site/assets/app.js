@@ -118,31 +118,6 @@
     return AQ.inflight;
   }
 
-  // 节奏页：整场逐字稿 + SC + 弹幕按节拍对应，只在打开这一页时取
-  var AR = { rows: null, inflight: null, failed: false };
-  function loadRhythm() {
-    if (AR.rows) return Promise.resolve(AR.rows);
-    if (AR.inflight) return AR.inflight;
-    var v = (D.meta && D.meta.rhythmVer) || '';
-    AR.inflight = fetch('rhythm.json' + (v ? '?v=' + v : ''), { credentials: 'same-origin' })
-      .then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function (blob) {
-        AR.rows = blob || null;
-        AR.failed = false;
-        AR.inflight = null;
-        return AR.rows;
-      })
-      .catch(function (err) {
-        AR.failed = true;
-        AR.inflight = null;
-        throw err;
-      });
-    return AR.inflight;
-  }
-
   function loadDiaryBody(d) {
     if (!d || d.body) return Promise.resolve(d);
     var key = d.key;
@@ -211,7 +186,7 @@
   }
 
   var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false,
-    tlKind: 'all', learn: false, rhFilter: 'all', rh: '', qScope: 'pick' };
+    tlKind: 'all', learn: false };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
@@ -459,11 +434,17 @@
     state.scOnly = false;
     if (r.view === 'quotes') {
       setNav('quotes');
-      state.qScope = r.q.scope === 'full' ? 'full' : 'pick';
+      // 整场视图已撤下，旧 ?scope=full 深链统一回全部
+      state.tag = r.q.tag || '全部';
+      state.qs = 'all';
       renderQuotes();
     }
-    // 节奏已合入摘录页：旧深链仍可用，落到「整场」视图
-    else if (r.view === 'rhythm') { location.replace('#/quotes?scope=full' + (r.q.focus ? '&focus=' + encodeURIComponent(r.q.focus) : '')); return; }
+    // 旧 #/rhythm 链接回到摘录页
+    else if (r.view === 'rhythm') {
+      location.replace('#/quotes' +
+        (r.q.focus ? '?focus=' + encodeURIComponent(r.q.focus) : ''));
+      return;
+    }
     else if (r.view === 'timeline') { setNav('timeline'); renderTimeline(); }
     // 存档只有一个页面：日历选日 → 选场次 → 同页展开逐字稿
     else if (r.view === 'archive') {
@@ -1011,46 +992,21 @@
     setFoot();
   }
 
-  // 摘录页：精选（人工挑的段落）与整场（全量逐字稿按回应分组）共用一个视图。
-  // 两种数据都转成同样的卡片对象，筛选、搜索、触底加载走同一条路径。
-  function rhythmAsQuotes(R) {
-    var sessId = -1;
-    (D.sessions || []).forEach(function (x) { if (x.key === R.session) sessId = x.id; });
-    var out = [];
-    (R.beats || []).forEach(function (c) {
-      var lines = c.lines || [];
-      out.push({
-        id: c.id, s: sessId, date: R.date, t: (lines[0] || {}).t || c.t,
-        tag: c.tag || '现场', tags: [c.tag || '现场'],
-        title: c.title || '', note: c.note || '',
-        refs: c.refs || [], lines: lines,
-        full: true, kind: c.kind || 'free', quote: !!c.quote,
-        jp: lines.map(function (l) { return l.jp; }).join('\n'),
-        zh: lines.map(function (l) { return l.zh; }).join('\n'),
-      });
-    });
-    return out;
-  }
-
+  // 摘录页只有一个视图：人工挑的段落，全部从 quotes.json 来，
+  // 筛选、搜索、触底加载走同一条路径。
   function renderQuotes() {
     var tok = pageTok;
-    var full = state.qScope === 'full';
-    var needQuotes = !full && !AQ.rows;
-    var needRhythm = full && !AR.rows;
-    if (needQuotes || needRhythm) {
-      loadingPage(full ? 'ONE STREAM, EVERY BEAT' : 'TRANSCRIPT EXCERPTS',
-        full ? '整场' : '摘录', full ? '正在载入整场记录…' : '正在载入摘录…');
-      var job = needQuotes ? loadQuotes() : loadRhythm();
-      job.then(function () {
+    if (!AQ.rows) {
+      loadingPage('TRANSCRIPT EXCERPTS', '摘录', '正在载入摘录…');
+      loadQuotes().then(function () {
         if (tok === pageTok) renderQuotes();
       }).catch(function () {
-        if (tok === pageTok) failPage((full ? '整场记录' : '摘录') + '没能加载，请刷新重试。');
+        if (tok === pageTok) failPage('摘录没能加载，请刷新重试。');
       });
       return;
     }
 
-    // 两个数据源都不改：整场时临时组装成同构卡片数组，精选时直接用 D.quotes
-    var all = full ? rhythmAsQuotes(AR.rows) : D.quotes;
+    var all = D.quotes;
     var focusId = parseHash().q.focus || '';
     var focusQ = focusId ? all.filter(function (x) { return x.id === focusId; })[0] : null;
     if (focusQ) { state.tag = '全部'; state.qs = 'all'; }
@@ -1073,58 +1029,29 @@
         esc(t) + '<span class="n">' + n + '</span></button>';
     }).join('');
 
-    var scopeBar = '<div class="filters" id="scopeBar">' +
-      '<button class="chip' + (full ? '' : ' on') + '" data-scope="pick">精选</button>' +
-      '<button class="chip' + (full ? ' on' : '') + '" data-scope="full">整场</button>' +
-      '<span class="scopehint">' + (full
-        ? '完整逐字稿按时间顺序排列；她回应过的 SC / 弹幕挂在对应段落，其余按时间散装'
-        : '从全场挑出的段落，中日对照，按话题分类') + '</span></div>';
-
-    var extra = '';
-    if (full) {
-      var kinds = [['all', '全部'], ['reply', '有回应'], ['free', '散装逐字稿']];
-      extra = '<div class="filters" id="kindBar">' + kinds.map(function (x) {
-        return '<button class="chip' + (state.rhFilter === x[0] ? ' on' : '') +
-          '" data-kind="' + x[0] + '">' + x[1] + '</button>';
-      }).join('') + '</div>';
-    } else {
-      var sess = D.sessions.filter(function (s) {
-        return all.some(function (q) { return q.s === s.id; });
-      }).reverse();
-      var schips = '<button class="chip' + (state.qs === 'all' ? ' on' : '') + '" data-s="all">全部<span class="n">' + all.length + '</span></button>' +
-        sess.map(function (s) {
-          var n = all.filter(function (q) { return q.s === s.id; }).length;
-          return '<button class="chip' + (state.qs === String(s.id) ? ' on' : '') + '" data-s="' + esc(s.id) + '">' +
-            esc(s.date.replace('-', '.')) + '<span class="n">' + n + '</span></button>';
-        }).join('');
-      extra = '<div class="filters" id="sfilters"><span class="flabel">场次</span>' + schips + '</div>';
-    }
+    var sess = D.sessions.filter(function (s) {
+      return all.some(function (q) { return q.s === s.id; });
+    }).reverse();
+    var schips = '<button class="chip' + (state.qs === 'all' ? ' on' : '') + '" data-s="all">全部<span class="n">' + all.length + '</span></button>' +
+      sess.map(function (s) {
+        var n = all.filter(function (q) { return q.s === s.id; }).length;
+        return '<button class="chip' + (state.qs === String(s.id) ? ' on' : '') + '" data-s="' + esc(s.id) + '">' +
+          esc(s.date.replace('-', '.')) + '<span class="n">' + n + '</span></button>';
+      }).join('');
+    var extra = '<div class="filters" id="sfilters"><span class="flabel">场次</span>' + schips + '</div>';
 
     app.innerHTML =
       '<section class="hero hero-sm">' +
         '<div class="hero-copy">' +
-          '<div class="kicker">' + (full ? 'ONE STREAM, EVERY BEAT' : 'TRANSCRIPT EXCERPTS') + '</div>' +
-          '<h1>' + (full
-            ? '整场<span class="thin">，</span><span class="accent">' + AR.rows.total + '</span> 句'
-            : '摘录<span class="thin">，</span><span class="accent">' + all.length + '</span> 段') + '</h1>' +
-          '<p class="lead">' + (full
-            ? esc(AR.rows.title) + ' 全量逐字稿按原时间顺序排列，一条不落。她读到／回应的 '
-              + AR.rows.scCount + ' 条 SC 与 ' + (AR.rows.dmCount || 0) + ' 条弹幕挂在对应段落；其余按时间散装。'
-            : '从 ' + num(D.meta.total) + ' 条记录里挑出的 ' + all.length + ' 段，中日对照，按话题分类。') +
-          '</p>' +
+          '<div class="kicker">TRANSCRIPT EXCERPTS</div>' +
+          '<h1>摘录<span class="thin">，</span><span class="accent">' + all.length + '</span> 段</h1>' +
+          '<p class="lead">从 ' + num(D.meta.total) + ' 条逐字稿里整理出的 ' + all.length +
+            ' 段，中日对照，按话题分类。</p>' +
         '</div>' +
       '</section>' +
-      scopeBar + '<div class="filters" id="filters">' + chips + '</div>' + extra +
+      '<div class="filters" id="filters">' + chips + '</div>' + extra +
       '<div class="qlist" id="qlist"></div>' +
       '<div class="qmore" id="qmore"><div id="qSentinel" class="qsentinel"></div></div>';
-
-    document.getElementById('scopeBar').addEventListener('click', function (e) {
-      var b = e.target.closest('.chip');
-      if (!b) return;
-      state.qScope = b.getAttribute('data-scope');
-      state.tag = '全部'; state.qs = 'all'; state.rhFilter = 'all';
-      renderQuotes();
-    });
     document.getElementById('filters').addEventListener('click', function (e) {
       var b = e.target.closest('.chip');
       if (!b) return;
@@ -1132,14 +1059,6 @@
       document.querySelectorAll('#filters .chip').forEach(function (c) {
         c.classList.toggle('on', c.getAttribute('data-tag') === state.tag);
       });
-      renderQuoteList(true);
-    });
-    var kindBar = document.getElementById('kindBar');
-    if (kindBar) kindBar.addEventListener('click', function (e) {
-      var b = e.target.closest('.chip');
-      if (!b) return;
-      state.rhFilter = b.getAttribute('data-kind');
-      document.querySelectorAll('#kindBar .chip').forEach(function (c) { c.classList.toggle('on', c === b); });
       renderQuoteList(true);
     });
     var sfilters = document.getElementById('sfilters');
@@ -1162,7 +1081,7 @@
     setFoot();
   }
 
-  // 引用数组：老条目只有 sc / dm 各一条，新条目（含节奏卡）用 refs 带多条。
+  // 引用数组：老条目只有 sc / dm 各一条，新条目用 refs 带多条。
   // 统一从这里取，卡片、复制、卡片图、时间线、搜索都用同一口径。
   function quoteRefs(q) {
     if (q && q.refs && q.refs.length) {
@@ -1388,12 +1307,10 @@
   // reset=true 时回到第一批：切换筛选后从顶部重新铺，避免停在一个空的批次上
   function renderQuoteList(reset) {
     if (reset) state.qShown = QBATCH;
-    var all = state.qScope === 'full' ? rhythmAsQuotes(AR.rows || {}) : D.quotes;
+    var all = D.quotes;
     var list = all.filter(function (q) {
       if (state.tag !== '全部' && qTags(q).indexOf(state.tag) < 0) return false;
-      if (state.qScope === 'full') {
-        if (state.rhFilter !== 'all' && q.kind !== state.rhFilter) return false;
-      } else if (state.qs !== 'all' && String(q.s) !== state.qs) return false;
+      if (state.qs !== 'all' && String(q.s) !== state.qs) return false;
       return true;
     });
     state.qList = list;
