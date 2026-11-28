@@ -154,7 +154,7 @@ def main():
                 skips.append({'session': name, 'key': k, 'why': '场次里没有这个时间戳#序号'})
                 continue
             exp_src = asr_fixes.apply(r['src'])
-            exp_tr = asr_fixes.apply(r['tr'])
+            exp_tr = asr_fixes.apply_zh(r['tr'])
             orig = o.get('orig') or {}
             if orig.get('jp') != exp_src or orig.get('zh') != exp_tr:
                 skips.append({'session': name, 'key': k, 'why': 'orig 与当前库不一致（可能已改过或库变了）'})

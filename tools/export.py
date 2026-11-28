@@ -48,7 +48,7 @@ def main():
         payload = dict(meta)
         recs = []
         for t, src, tr in s['recs']:
-            src, tr = asr_fixes.apply(src), asr_fixes.apply(tr)
+            src, tr = asr_fixes.apply(src), asr_fixes.apply_zh(tr)
             recs.append([datetime.fromtimestamp(t).strftime('%H:%M:%S'),
                          src, tr, common.classify(src, tr)])
         # 单行覆盖最后套：它写的就是最终文本，不再和 FIXES 叠

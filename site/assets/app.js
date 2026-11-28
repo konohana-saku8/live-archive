@@ -1355,7 +1355,12 @@
     var head = cr
       ? (cr.kind === 'dm' ? '【弹幕】' : '') + '「' + (cr.name ? cr.name + '：' : '') + cr.text + '」\n'
       : '';
-    var text = head + q.zh + '\n' + q.jp + '\n—— ' + D.meta.streamer + ' ' + q.date + ' ' + q.t;
+    // 复制出去的正文和卡片上读到的顺序一致：一条原文跟一条译文交错，条目之间空一行。
+    var rowLines = (q.lines && q.lines.length) ? q.lines : [{ jp: q.jp || '', zh: q.zh || '' }];
+    var body = rowLines.map(function (l) {
+      return l.jp + (l.zh ? '\n' + l.zh : '');
+    }).join('\n\n');
+    var text = head + body + '\n\n—— 直播时间 ' + q.date + ' ' + q.t;
     var done = function () { btn.textContent = '已复制'; setTimeout(function () { btn.textContent = '复制'; }, 1400); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(done, done);
