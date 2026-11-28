@@ -211,7 +211,7 @@
   }
 
   var state = { q: '', hideEmpty: false, scOnly: false, tag: '全部', qs: 'all', qShown: 0, dpage: 1, spage: 1, counted: false,
-    tlKind: 'all', learn: false, rhFilter: 'all', rhShown: 6, rh: '' };
+    tlKind: 'all', learn: false, rhFilter: 'all', rh: '' };
   var QBATCH = 12;   // 摘录每次渲染的条数
   var DPAGE = 4;     // 日记每页篇数
   var SPAGE = 6;     // 首页「全部场次」每页场数
@@ -1116,7 +1116,7 @@
     var beats = R.beats || [];
     if (!beats.length) { failPage('这场还没有节奏数据。'); return; }
 
-    var kinds = [['all', '全部'], ['reply', '有回应'], ['sc', '散装 SC'],
+    var kinds = [['all', '全部'], ['reply', '有回应'],
                  ['free', '散装逐字稿'], ['quote', '已摘录']];
     function scRow(s) {
       return '<div class="qsc"><b>' + esc(s.name || '观众') +
@@ -1153,7 +1153,6 @@
       var needle = state.rh.trim();
       var list = beats.filter(function (c) {
         if (state.rhFilter === 'reply' && c.kind !== 'reply') return false;
-        if (state.rhFilter === 'sc' && c.kind !== 'sc') return false;
         if (state.rhFilter === 'free' && c.kind !== 'free') return false;
         if (state.rhFilter === 'quote' && !c.quote) return false;
         if (!needle) return true;
@@ -1162,18 +1161,11 @@
         return hay.toLowerCase().indexOf(needle.toLowerCase()) >= 0;
       });
       state.rhList = list;
-      var shown = list.slice(0, state.rhShown);
-      box.innerHTML = shown.map(card).join('') ||
+      box.innerHTML = list.map(card).join('') ||
         '<div class="empty">这个筛选条件下没有内容。</div>';
       var more = document.getElementById('rhMore');
-      if (more) {
-        more.innerHTML = list.length > state.rhShown
-          ? '<button class="morebtn" id="rhMoreBtn">加载更多 ↓</button>' +
-            '<span class="mhint">已显示 ' + shown.length + ' / ' + list.length + ' 段 · ' +
-            R.total + ' 条逐字稿全部在内</span>'
-          : '<span class="mhint">已全部显示 · ' + list.length + ' 段 · ' +
-            R.total + ' 条逐字稿全部在内</span>';
-      }
+      if (more) more.innerHTML = '<span class="mhint">' + list.length + ' 段 · ' +
+        R.total + ' 条逐字稿全部在内</span>';
       var cnt = document.getElementById('rhCount');
       if (cnt) cnt.textContent = '共 ' + list.length + ' 段';
     }
@@ -1184,8 +1176,8 @@
           '<div class="kicker">ONE STREAM, EVERY BEAT</div>' +
           '<h1>节奏<span class="thin">，</span><span class="accent">' + R.total + '</span> 句</h1>' +
           '<p class="lead">' + esc(R.title) + ' 完整逐字稿按原时间顺序排列，一条不落。' +
-          '她回应 SC 的段落把那条 SC 放在卡头作引用；散装的 SC 与逐字稿按时间插入，' +
-          '不打断逐字稿顺序。共 ' + R.total + ' 条逐字稿、' + R.scCount + ' 条 SC。</p>' +
+          '她读到的 SC 放在所回应段落的卡头作引用，没念到的不收；' +
+          '其余逐字稿按时间散装，不打断顺序。共 ' + R.total + ' 条逐字稿、' + R.scCount + ' 条读到的 SC。</p>' +
         '</div>' +
       '</section>' +
       '<div class="filters" id="rhKinds">' + kinds.map(function (x) {
@@ -1203,7 +1195,6 @@
       var b = e.target.closest('.chip');
       if (!b) return;
       state.rhFilter = b.getAttribute('data-k');
-      state.rhShown = 6;
       document.querySelectorAll('#rhKinds .chip').forEach(function (c) {
         c.classList.toggle('on', c === b);
       });
@@ -1211,12 +1202,6 @@
     });
     document.getElementById('rhSearch').addEventListener('input', function (e) {
       state.rh = e.target.value;
-      state.rhShown = 6;
-      paint();
-    });
-    document.getElementById('rhMore').addEventListener('click', function (e) {
-      if (!e.target.closest('#rhMoreBtn')) return;
-      state.rhShown += 6;
       paint();
     });
     paint();

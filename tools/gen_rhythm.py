@@ -11,9 +11,10 @@
   - 主线是全部逐字稿，严格按原顺序，一条不重不漏；不因 SC 的时间挪动任何一句；
   - 手工映射里的 lines 可能不连续，按「连续区间」拆成多张卡片，各自留在自己的时间位置，
     同一条 SC 可以在多个区间上作为引用出现；
-  - 没有对应逐字稿的 SC 按 SC 时间作为独立卡片插入时间线（不打断逐字稿的相对顺序）；
+  - 只有她实际读到／回应的 SC 才作为引用出现；没念到的 SC 不进页面；
   - 没有对应 SC 的逐字稿按连续区间散装；
-  - 不读弹幕、不记上屏时间——只保留观众发言与她自己的话。
+  - 不读弹幕、不记上屏时间——只保留观众发言与她自己的话；
+  - SC 的发出时间只用于排序同一卡内的多条引用，不决定卡片位置。
 
 输出 site/data/rhythm.json；内容没变就不重写。
 """
@@ -130,15 +131,7 @@ def main():
                 'lines': lines,
             })
 
-    # 没有对应逐字稿的 SC：一条一张卡，按 SC 时间插入时间线
-    for s in scs.values():
-        if s['id'] in used_sc:
-            continue
-        cards.append({
-            'kind': 'sc', 't': s['start'], 'end': s['start'],
-            'title': clip(s['text'], 26) or '观众留言', 'tag': 'SC', 'note': '',
-            'quote': False, 'scs': [s], 'lines': [],
-        })
+    # 没被她读到／回应的 SC 不进页面；只有逐字稿的连续区间才散装。
 
     # 没有对应 SC 的逐字稿：连续区间按时间散装
     free_idx = [i for i in range(len(recs)) if i not in paired]
@@ -162,7 +155,9 @@ def main():
                               c['lines'][0]['i'] if c['lines'] else -1))
     all_lines = [l['i'] for c in cards for l in c['lines']]
     assert all_lines == list(range(len(recs))), '逐字稿必须按原顺序全量覆盖'
-    assert len({s['id'] for c in cards for s in c['scs']}) == len(scs), 'SC 重复或缺失'
+    used_ids = {s['id'] for c in cards for s in c['scs']}
+    assert used_ids == used_sc, 'SC 引用必须与映射一致'
+    assert used_ids <= set(scs), 'SC id 不在本场库内'
 
     for n, c in enumerate(cards, 1):
         c['id'] = 'b%d' % n
@@ -171,7 +166,7 @@ def main():
 
     out = {
         'session': KEY, 'date': sess['date'], 'title': sess['dateLong'],
-        'total': len(recs), 'scCount': len(scs), 'beats': cards,
+        'total': len(recs), 'scCount': len(used_sc), 'beats': cards,
     }
     path = os.path.join(site_dir, 'data', 'rhythm.json')
     text = json.dumps(out, ensure_ascii=False, indent=1) + '\n'
@@ -185,10 +180,8 @@ def main():
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(text)
     n_reply = sum(1 for c in cards if c['kind'] == 'reply')
-    n_sc = sum(1 for c in cards if c['kind'] == 'sc')
-    print('rhythm: %d 卡片（%d 回应段 / %d 散装 SC / %d 散装逐字稿） / %d 条逐字稿 / %d 条 SC → %s'
-          % (len(cards), n_reply, n_sc, len(cards) - n_reply - n_sc,
-             len(recs), len(scs), path))
+    print('rhythm: %d 卡片（%d 回应段 / %d 散装逐字稿） / %d 条逐字稿 / %d 条读到的 SC → %s'
+          % (len(cards), n_reply, len(cards) - n_reply, len(recs), len(used_sc), path))
     return 0
 
 
